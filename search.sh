@@ -1,0 +1,15 @@
+python -m torch.distributed.launch \
+--nproc_per_node=8 \
+--use_env supernet_train.py \
+--data-set CIFAR10 \
+--data-path /home/hanjing/CHE/SpikeDHS_CLA/data \
+--gp \
+--change_qk \
+--relative_position \
+--mode super \
+--dist-eval \
+--cfg ./experiments/supernet/supernet-T.yaml \
+--epochs 50 \
+--warmup-epochs 10 \
+--output logs \
+--batch-size 32
