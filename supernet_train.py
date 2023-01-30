@@ -20,6 +20,9 @@ from lib import utils
 from lib.config import cfg, update_config_from_file
 from model.supernet_transformer import Vision_TransformerSuper
 import os
+import fitlog
+import git
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('AutoFormer training and evaluation script', add_help=False)
@@ -154,8 +157,9 @@ def get_args_parser():
                         choices=['kingdom', 'phylum', 'class', 'order', 'supercategory', 'family', 'genus', 'name'],
                         type=str, help='semantic granularity')
 
-    parser.add_argument('--output_dir', default='./',
+    parser.add_argument('--output_dir', default='debug',
                         help='path where to save, empty for no saving')
+    parser.add_argument('--experiment_description', default='debug')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -184,14 +188,34 @@ def get_args_parser():
     return parser
 
 
+
 def main(args):
     
-
-    print('before!')
+    ### FITLOG ###
+    fitlog_debug = False
+    repo = git.Repo(search_parent_directories=True)
+    git_branch = path = repo.head.reference.path.split('/')[-1]
+    git_msg = repo.head.object.summary
+    git_commit_id = repo.head.object.hexsha[:10]
+    if fitlog_debug:
+        fitlog.debug()
+    else:
+        fitlog.commit(__file__,fit_msg=args.experiment_description)
+        log_path = "logs"
+        if not os.path.isdir(log_path):
+            os.mkdir(log_path)
+        fitlog.set_log_dir(log_path)
+        fitlog.create_log_folder()
+        fitlog.add_hyper(args)
+        args.output_dir = os.path.join(log_path,fitlog.get_log_folder())
+    
+        fitlog.add_other(name='git_branch',value=git_branch)
+        fitlog.add_other(name='git_msg',value=git_msg)
+        fitlog.add_other(name='git_commit_id',value=git_commit_id)
+        ### FITLOG ###
+        
     utils.init_distributed_mode(args)
     args.distributed = False
-    
-    # print('!!!!',args.gpu)
     update_config_from_file(args.cfg)
 
     print(args)
@@ -380,6 +404,10 @@ def main(args):
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
         print(f'Max accuracy: {max_accuracy:.2f}%')
+
+        # fitlog.add_metric(train_stats["acc1"],epoch,'train_top1')
+        fitlog.add_metric(test_stats["acc1"],epoch,'test_top1')
+        fitlog.add_best_metric({"test_top1":max_accuracy})
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'test_{k}': v for k, v in test_stats.items()},

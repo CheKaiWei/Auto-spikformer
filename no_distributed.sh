@@ -9,5 +9,5 @@ CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --cfg ./experiments/supernet/supernet-T.yaml \
 --epochs 50 \
 --warmup-epochs 10 \
---output logs \
---batch-size 32
+--batch-size 32 \
+--experiment_description 'init experiment'

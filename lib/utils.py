@@ -207,7 +207,7 @@ def save_on_master(*args, **kwargs):
 
 
 def init_distributed_mode(args):
-    print('inside!', os.environ)
+    # print('inside!', os.environ)
     if 'OMPI_COMM_WORLD_RANK' in os.environ:
         print('OMPI_COMM_WORLD_RANK')
         args.rank = int(os.environ.get('OMPI_COMM_WORLD_RANK'))
