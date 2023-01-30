@@ -19,7 +19,7 @@ from lib.samplers import RASampler
 from lib import utils
 from lib.config import cfg, update_config_from_file
 from model.supernet_transformer import Vision_TransformerSuper
-
+import os
 
 def get_args_parser():
     parser = argparse.ArgumentParser('AutoFormer training and evaluation script', add_help=False)
@@ -183,9 +183,15 @@ def get_args_parser():
 
     return parser
 
-def main(args):
 
+def main(args):
+    
+
+    print('before!')
     utils.init_distributed_mode(args)
+    args.distributed = False
+    
+    # print('!!!!',args.gpu)
     update_config_from_file(args.cfg)
 
     print(args)
@@ -285,7 +291,7 @@ def main(args):
     model_without_ddp = model
     if args.distributed:
 
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        #model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)

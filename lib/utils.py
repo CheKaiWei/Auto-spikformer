@@ -207,15 +207,23 @@ def save_on_master(*args, **kwargs):
 
 
 def init_distributed_mode(args):
+    print('inside!', os.environ)
     if 'OMPI_COMM_WORLD_RANK' in os.environ:
+        print('OMPI_COMM_WORLD_RANK')
         args.rank = int(os.environ.get('OMPI_COMM_WORLD_RANK'))
         args.world_size = int(os.environ.get('OMPI_COMM_WORLD_SIZE'))
         args.gpu = args.rank % torch.cuda.device_count()
+        
     elif 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        CUDA_VISIBLE_DEVICES = int(os.environ["LOCAL_RANK"])
+        # torch.distributed.barrier(device_ids=int(os.environ["LOCAL_RANK"]))
+
+        print('RANK')
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ['WORLD_SIZE'])
         args.gpu = int(os.environ['LOCAL_RANK'])
     elif 'SLURM_PROCID' in os.environ:
+        print('SLURM_PROCID')
         args.rank = int(os.environ['SLURM_PROCID'])
         args.gpu = args.rank % torch.cuda.device_count()
     else:

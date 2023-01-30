@@ -1,6 +1,4 @@
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch \
---master_port 29501 \
---use_env supernet_train.py \
+CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --data-set CIFAR10 \
 --data-path /home/hanjing/CHE/SpikeDHS_CLA/data \
 --gp \
