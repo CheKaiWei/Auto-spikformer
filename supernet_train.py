@@ -192,7 +192,7 @@ def get_args_parser():
 def main(args):
     
     ### FITLOG ###
-    fitlog_debug = False
+    fitlog_debug = True
     repo = git.Repo(search_parent_directories=True)
     git_branch = path = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
@@ -350,7 +350,17 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
-        model_without_ddp.load_state_dict(checkpoint['model'])
+
+        model_weight_with_head = checkpoint['model']
+        model_weight_without_head = {}
+        for k, v in model_weight_with_head.items():
+            if 'head' not in k:
+                model_weight_without_head[k] = v
+        print(model_weight_without_head.keys())
+        model_without_ddp.load_state_dict(model_weight_without_head, strict=False)
+
+
+
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
