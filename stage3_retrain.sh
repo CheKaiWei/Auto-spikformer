@@ -10,3 +10,4 @@ python supernet_train.py \
 --resume logs/pretrained_model/supernet-tiny.pth \
 --eval \
 --output_dir logs/stage3_retrain/
+--experiment_description 'retrain from imagenet T'

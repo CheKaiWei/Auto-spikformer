@@ -201,7 +201,12 @@ def main(args):
         fitlog.debug()
     else:
         fitlog.commit(__file__,fit_msg=args.experiment_description)
-        log_path = "logs"
+        if args.mode == 'retrain':
+            log_path = "logs/stage3_retrain"
+        elif args.mode == 'super':
+            log_path = "logs/stage1_train_supernet"
+        else:
+            log_path = 'debug'
         if not os.path.isdir(log_path):
             os.mkdir(log_path)
         fitlog.set_log_dir(log_path)
