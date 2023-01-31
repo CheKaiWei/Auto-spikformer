@@ -7,7 +7,11 @@ CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --mode super \
 --dist-eval \
 --cfg ./experiments/supernet/supernet-T.yaml \
---epochs 50 \
+--resume logs/pretrained_model/supernet-tiny.pth \
+--epochs 1000 \
 --warmup-epochs 10 \
---batch-size 32 \
---experiment_description 'init experiment'
+--batch-size 64 \
+--experiment_description 'train supernet: from imagenet checkpoint train' \
+--opt sgd \
+--weight-decay 1e-8 \
+--lr 1e-2 \

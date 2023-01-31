@@ -8,7 +8,6 @@ python supernet_train.py \
 --dist-eval \
 --cfg ./experiments/subnet/AutoFormer-T.yaml \
 --resume logs/pretrained_model/supernet-tiny.pth \
---output_dir logs/stage3_retrain/ \
 --experiment_description 'retrain from imagenet T' \
 --opt sgd \
 --weight-decay 1e-8 \
