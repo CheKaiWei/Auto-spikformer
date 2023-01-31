@@ -9,6 +9,7 @@ from timm.utils import accuracy, ModelEma
 from lib import utils
 import random
 import time
+from spikingjelly.activation_based import functional
 
 def sample_configs(choices):
 
@@ -51,6 +52,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        functional.reset_net(model)
         # print(samples.shape)
 
         # sample random config
@@ -76,6 +78,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     outputs = model(samples)
                     loss = criterion(outputs, targets)
         else:
+            
             outputs = model(samples)
             if teacher_model:
                 with torch.no_grad():
@@ -140,6 +143,7 @@ def evaluate(data_loader, model, device, amp=True, choices=None, mode='super', r
     for images, target in metric_logger.log_every(data_loader, 10, header):
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
+        functional.reset_net(model)
         # compute output
         if amp:
             with torch.cuda.amp.autocast():

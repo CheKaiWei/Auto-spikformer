@@ -22,6 +22,7 @@ from model.supernet_transformer import Vision_TransformerSuper
 import os
 import fitlog
 import git
+from spikingjelly.activation_based import functional
 
 
 def get_args_parser():
@@ -298,6 +299,8 @@ def main(args):
                                     max_relative_position=args.max_relative_position,
                                     relative_position=args.relative_position,
                                     change_qkv=args.change_qkv, abs_pos=not args.no_abs_pos)
+    
+    functional.set_step_mode(model, 'm')
 
     choices = {'num_heads': cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': cfg.SEARCH_SPACE.MLP_RATIO,
                'embed_dim': cfg.SEARCH_SPACE.EMBED_DIM , 'depth': cfg.SEARCH_SPACE.DEPTH}

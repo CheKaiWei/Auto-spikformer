@@ -7,7 +7,6 @@ CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --mode super \
 --dist-eval \
 --cfg ./experiments/supernet/supernet-T.yaml \
---resume logs/pretrained_model/supernet-tiny.pth \
 --epochs 1000 \
 --warmup-epochs 10 \
 --batch-size 64 \

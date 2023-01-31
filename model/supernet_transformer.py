@@ -10,6 +10,7 @@ from model.module.embedding_super import PatchembedSuper
 from model.utils import trunc_normal_
 from model.utils import DropPath
 import numpy as np
+from spikingjelly.activation_based.neuron import LIFNode
 
 def gelu(x: torch.Tensor) -> torch.Tensor:
     if hasattr(torch.nn.functional, 'gelu'):
@@ -149,28 +150,59 @@ class Vision_TransformerSuper(nn.Module):
     def forward_features(self, x):
         B = x.shape[0]
         x = self.patch_embed_super(x)
-        cls_tokens = self.cls_token[..., :self.sample_embed_dim[0]].expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-        if self.abs_pos:
-            x = x + self.pos_embed[..., :self.sample_embed_dim[0]]
 
-        x = F.dropout(x, p=self.sample_dropout, training=self.training)
+        #cls_tokens = self.cls_token[..., :self.sample_embed_dim[0]].expand(B, -1, -1)
+        #x = torch.cat((cls_tokens, x), dim=1)
+        #if self.abs_pos:
+        #    x = x + self.pos_embed[..., :self.sample_embed_dim[0]]
+
+        #x = F.dropout(x, p=self.sample_dropout, training=self.training)
 
         # start_time = time.time()
         for blk in self.blocks:
             x = blk(x)
         # print(time.time()-start_time)
-        if self.pre_norm:
+        #if self.pre_norm:
             x = self.norm(x)
 
-        if self.gp:
-            return torch.mean(x[:, 1:] , dim=1)
+        #if self.gp:
+        #    return torch.mean(x[:, 1:] , dim=1)
 
-        return x[:, 0]
+        return x.mean(2)
 
     def forward(self, x):
+        T = 4
+        x = (x.unsqueeze(0)).repeat(T, 1, 1, 1, 1)
         x = self.forward_features(x)
-        x = self.head(x)
+        x = self.head(x.mean(0))
+        return x
+
+class MLP(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1_linear = nn.Linear(in_features, hidden_features)
+        self.fc1_bn = nn.BatchNorm1d(hidden_features)
+        self.fc1_lif = LIFNode(tau=2.0, detach_reset=True)
+
+        self.fc2_linear = nn.Linear(hidden_features, out_features)
+        self.fc2_bn = nn.BatchNorm1d(out_features)
+        self.fc2_lif = LIFNode(tau=2.0, detach_reset=True)
+
+        self.c_hidden = hidden_features
+        self.c_output = out_features
+
+    def forward(self, x):
+        T,B,N,C = x.shape
+        x_ = x.flatten(0, 1)
+        x = self.fc1_linear(x_)
+        x = self.fc1_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, self.c_hidden).contiguous()
+        x = self.fc1_lif(x)
+
+        x = self.fc2_linear(x.flatten(0,1))
+        x = self.fc2_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        x = self.fc2_lif(x)
         return x
 
 
@@ -222,7 +254,7 @@ class TransformerEncoderLayer(nn.Module):
 
         self.fc1 = LinearSuper(super_in_dim=self.super_embed_dim, super_out_dim=self.super_ffn_embed_dim_this_layer)
         self.fc2 = LinearSuper(super_in_dim=self.super_ffn_embed_dim_this_layer, super_out_dim=self.super_embed_dim)
-
+        self.mlp = MLP(in_features=self.super_embed_dim, hidden_features=self.super_embed_dim)
 
     def set_sample_config(self, is_identity_layer, sample_embed_dim=None, sample_mlp_ratio=None, sample_num_heads=None, sample_dropout=None, sample_attn_dropout=None, sample_out_dim=None):
 
@@ -250,7 +282,7 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
 
 
-    def forward(self, x):
+    def forward(self, x): # T,B,N,C
         """
         Args:
             x (Tensor): input to the layer of shape `(batch, patch_num , sample_embed_dim)`
@@ -258,34 +290,41 @@ class TransformerEncoderLayer(nn.Module):
         Returns:
             encoded output of shape `(batch, patch_num, sample_embed_dim)`
         """
-        if self.is_identity_layer:
-            return x
+        # if self.is_identity_layer:
+        #     return x
 
-        # compute attn
-        # start_time = time.time()
+        # # compute attn
+        # # start_time = time.time()
 
-        residual = x
-        x = self.maybe_layer_norm(self.attn_layer_norm, x, before=True)
-        x = self.attn(x)
-        x = F.dropout(x, p=self.sample_attn_dropout, training=self.training)
-        x = self.drop_path(x)
-        x = residual + x
-        x = self.maybe_layer_norm(self.attn_layer_norm, x, after=True)
-        # print("attn :", time.time() - start_time)
-        # compute the ffn
-        # start_time = time.time()
-        residual = x
-        x = self.maybe_layer_norm(self.ffn_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc1(x))
-        x = F.dropout(x, p=self.sample_dropout, training=self.training)
-        x = self.fc2(x)
-        x = F.dropout(x, p=self.sample_dropout, training=self.training)
-        if self.scale:
-            x = x * (self.super_mlp_ratio / self.sample_mlp_ratio)
-        x = self.drop_path(x)
-        x = residual + x
-        x = self.maybe_layer_norm(self.ffn_layer_norm, x, after=True)
+        # residual = x
+        # x = self.maybe_layer_norm(self.attn_layer_norm, x, before=True)
+        # x = self.attn(x)
+        # x = F.dropout(x, p=self.sample_attn_dropout, training=self.training)
+        # x = self.drop_path(x)
+        # x = residual + x
+        # x = self.maybe_layer_norm(self.attn_layer_norm, x, after=True)
+        # # print("attn :", time.time() - start_time)
+        # # compute the ffn
+        # # start_time = time.time()
+        # residual = x
+        # x = self.maybe_layer_norm(self.ffn_layer_norm, x, before=True)
+        # x = self.activation_fn(self.fc1(x))
+        # x = F.dropout(x, p=self.sample_dropout, training=self.training)
+        # x = self.fc2(x)
+        # x = F.dropout(x, p=self.sample_dropout, training=self.training)
+        # if self.scale:
+        #     x = x * (self.super_mlp_ratio / self.sample_mlp_ratio)
+        # x = self.drop_path(x)
+        # x = residual + x
+        # x = self.maybe_layer_norm(self.ffn_layer_norm, x, after=True)
         # print("ffn :", time.time() - start_time)
+
+
+
+        x_attn = self.drop_path(self.attn(x))
+        x = x + x_attn
+        x = x + self.drop_path(self.mlp(x))
+
         return x
 
     def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
@@ -307,8 +346,5 @@ class TransformerEncoderLayer(nn.Module):
 
 def calc_dropout(dropout, sample_embed_dim, super_embed_dim):
     return dropout * 1.0 * sample_embed_dim / super_embed_dim
-
-
-
 
 
