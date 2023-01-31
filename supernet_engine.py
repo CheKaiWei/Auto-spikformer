@@ -29,6 +29,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     amp: bool = True, teacher_model: torch.nn.Module = None,
                     teach_loss: torch.nn.Module = None, choices=None, mode='super', retrain_config=None):
+    # print(optimizer)
+
     model.train()
     criterion.train()
 
@@ -49,6 +51,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        # print(samples.shape)
 
         # sample random config
         if mode == 'super':

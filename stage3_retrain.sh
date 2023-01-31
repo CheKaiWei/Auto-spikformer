@@ -8,6 +8,10 @@ python supernet_train.py \
 --dist-eval \
 --cfg ./experiments/subnet/AutoFormer-T.yaml \
 --resume logs/pretrained_model/supernet-tiny.pth \
---eval \
---output_dir logs/stage3_retrain/
---experiment_description 'retrain from imagenet T'
+--output_dir logs/stage3_retrain/ \
+--experiment_description 'retrain from imagenet T' \
+--opt sgd \
+--weight-decay 1e-8 \
+--lr 1e-2 \
+--epochs 1000
+# --eval \

@@ -66,7 +66,7 @@ def get_args_parser():
     parser.add_argument('--no_abs_pos', action='store_true')
 
     # Optimizer parameters
-    parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
+    parser.add_argument('--opt', default='sgd', type=str, metavar='OPTIMIZER',
                         help='Optimizer (default: "adamw"')
     parser.add_argument('--opt-eps', default=1e-8, type=float, metavar='EPSILON',
                         help='Optimizer Epsilon (default: 1e-8)')
@@ -192,7 +192,7 @@ def get_args_parser():
 def main(args):
     
     ### FITLOG ###
-    fitlog_debug = True
+    fitlog_debug = False
     repo = git.Repo(search_parent_directories=True)
     git_branch = path = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
@@ -361,7 +361,7 @@ def main(args):
         for k, v in model_weight_with_head.items():
             if 'head' not in k:
                 model_weight_without_head[k] = v
-        print(model_weight_without_head.keys())
+        # print(model_weight_without_head.keys())
         model_without_ddp.load_state_dict(model_weight_without_head, strict=False)
 
 
