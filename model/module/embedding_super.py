@@ -30,6 +30,11 @@ class PatchembedSuper(nn.Module):
         self.sampled_scale = None
 
 
+        self.sampled_bn_weight = None
+        self.sample_bn_bias = None
+        self.sample_bn_mean = None
+        self.sample_bn_var = None
+
         self.proj_conv = nn.Conv2d(in_chans, embed_dim//8, kernel_size=3, stride=1, padding=1, bias=False)
         self.proj_bn = nn.BatchNorm2d(embed_dim//8)
         self.proj_lif = LIFNode(tau=2.0, detach_reset=True)
@@ -54,11 +59,25 @@ class PatchembedSuper(nn.Module):
 
 
     def set_sample_config(self, sample_embed_dim):
+        # print('!!!!!',sample_embed_dim)
+        # self.sample_embed_dim = sample_embed_dim
+        # self.sampled_weight = self.proj.weight[:sample_embed_dim, ...]
+        # self.sampled_bias = self.proj.bias[:self.sample_embed_dim, ...]
+        # if self.scale:
+        #     self.sampled_scale = self.super_embed_dim / sample_embed_dim
+
         self.sample_embed_dim = sample_embed_dim
-        self.sampled_weight = self.proj.weight[:sample_embed_dim, ...]
-        self.sampled_bias = self.proj.bias[:self.sample_embed_dim, ...]
-        if self.scale:
-            self.sampled_scale = self.super_embed_dim / sample_embed_dim
+        self.sampled_weight = self.proj_conv3.weight[:sample_embed_dim, ...]
+
+        self.sampled_bn_weight = self.proj_bn3.weight[:sample_embed_dim, ...]
+        self.sampled_bn_bias = self.proj_bn3.bias[:self.sample_embed_dim, ...]
+        self.sampled_bn_mean = self.proj_bn3.running_mean[:sample_embed_dim, ...]
+        self.sampled_bn_std = self.proj_bn3.running_var[:self.sample_embed_dim, ...]
+
+
+
+        
+
     def forward(self, x):
         # T, B, C, H, W = x.shape
         # assert H == self.img_size[0] and W == self.img_size[1], \
@@ -74,6 +93,8 @@ class PatchembedSuper(nn.Module):
         # x = self.lif(x) 
         # x = x.flatten(-2).transpose(-1, -2)  # T,B,N,C
         T, B, C, H, W = x.shape
+
+
         x = self.proj_conv(x.flatten(0, 1)) # have some fire value
         x = self.proj_bn(x).reshape(T, B, -1, H, W).contiguous()
         x = self.proj_lif(x).flatten(0, 1).contiguous()
@@ -87,8 +108,15 @@ class PatchembedSuper(nn.Module):
         x = self.proj_lif2(x).flatten(0, 1).contiguous()
         x = self.maxpool2(x)
 
-        x = self.proj_conv3(x)
-        x = self.proj_bn3(x).reshape(T, B, -1, H//2, W//2).contiguous()
+        # x = self.proj_conv3(x)
+        # x = self.proj_bn3(x).reshape(T, B, -1, H//2, W//2).contiguous()
+        # x = self.proj_lif3(x).flatten(0, 1).contiguous()
+        # x = self.maxpool3(x)
+
+        x = F.conv2d(x, self.sampled_weight, stride=self.proj_conv3.stride, padding=self.proj_conv3.padding)
+        x = nn.functional.batch_norm(x, running_mean=self.sampled_bn_mean, running_var=self.sampled_bn_std,\
+             weight=self.sampled_bn_weight, bias=self.sampled_bn_bias, training=True, momentum=0.9)
+        x = x.reshape(T, B, -1, H//2, W//2).contiguous()
         x = self.proj_lif3(x).flatten(0, 1).contiguous()
         x = self.maxpool3(x)
 
@@ -102,7 +130,8 @@ class PatchembedSuper(nn.Module):
         return x
 
     def calc_sampled_param_num(self):
-        return  self.sampled_weight.numel() + self.sampled_bias.numel()
+        # return  self.sampled_weight.numel() + self.sampled_bias.numel()
+        return  self.sampled_weight.numel()
 
     def get_complexity(self, sequence_length):
         total_flops = 0
