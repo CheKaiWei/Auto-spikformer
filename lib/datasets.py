@@ -186,6 +186,11 @@ def build_dataset(is_train, args, folder_name=None):
 
     return dataset, nb_classes
 
+CIFAR10_MEAN = (0.4914,0.4822,0.4465)
+CIFAR10_STD = (0.2470,0.2435,0.2616)
+
+
+
 def build_transform(is_train, args):
     resize_im = args.input_size > 32
     if is_train:
@@ -199,6 +204,11 @@ def build_transform(is_train, args):
             re_prob=args.reprob,
             re_mode=args.remode,
             re_count=args.recount,
+            mean=CIFAR10_MEAN,
+            std=CIFAR10_STD,
+            hflip=0.5,
+            vflip=0
+
         )
         if not resize_im:
             # replace RandomResizedCropAndInterpolation with

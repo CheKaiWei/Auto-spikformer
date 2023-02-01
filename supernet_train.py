@@ -148,6 +148,7 @@ def get_args_parser():
                         help='Probability of switching to cutmix when both mixup and cutmix enabled')
     parser.add_argument('--mixup-mode', type=str, default='batch',
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
+    parser.add_argument('--mixup-off-epoch', type=int, default=200)
 
     # Dataset parameters
     parser.add_argument('--data-path', default='./data/imagenet/', type=str,
@@ -394,6 +395,10 @@ def main(args):
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
+
+        if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
+            if mixup_fn is not None:
+                mixup_fn.mixup_enabled = False
 
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,

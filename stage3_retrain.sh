@@ -1,4 +1,4 @@
-python supernet_train.py \
+CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --data-set CIFAR10 \
 --data-path /home/hanjing/CHE/SpikeDHS_CLA/data \
 --gp \
@@ -15,14 +15,16 @@ python supernet_train.py \
 --sched cosine \
 --epochs 1000 \
 --patch_size 4 \
---input-size 32 \
---batch-size 128 \
+--input-size 224 \
+--batch-size 2 \
 --warmup-epochs 20 \
 --warmup-lr 1e-5 \
 --epochs 300 \
 --mixup 0.5 \
+--mixup-off-epoch 200 \
 --cutmix 0 \
 --remode const \
+--color-jitter 0 \
 
 
 # --resume logs/pretrained_model/supernet-tiny.pth \
