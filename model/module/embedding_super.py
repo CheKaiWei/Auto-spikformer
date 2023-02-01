@@ -24,11 +24,34 @@ class PatchembedSuper(nn.Module):
         self.scale = scale
         self.lif = LIFNode(tau=2.0, detach_reset=True)
 
-    # sampled_
         self.sample_embed_dim = None
         self.sampled_weight = None
         self.sampled_bias = None
         self.sampled_scale = None
+
+
+        self.proj_conv = nn.Conv2d(in_chans, embed_dim//8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.proj_bn = nn.BatchNorm2d(embed_dim//8)
+        self.proj_lif = LIFNode(tau=2.0, detach_reset=True)
+
+        self.proj_conv1 = nn.Conv2d(embed_dim//8, embed_dim//4, kernel_size=3, stride=1, padding=1, bias=False)
+        self.proj_bn1 = nn.BatchNorm2d(embed_dim//4)
+        self.proj_lif1 = LIFNode(tau=2.0, detach_reset=True)
+
+        self.proj_conv2 = nn.Conv2d(embed_dim//4, embed_dim//2, kernel_size=3, stride=1, padding=1, bias=False)
+        self.proj_bn2 = nn.BatchNorm2d(embed_dim//2)
+        self.proj_lif2 = LIFNode(tau=2.0, detach_reset=True)
+        self.maxpool2 = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+
+        self.proj_conv3 = nn.Conv2d(embed_dim//2, embed_dim, kernel_size=3, stride=1, padding=1, bias=False)
+        self.proj_bn3 = nn.BatchNorm2d(embed_dim)
+        self.proj_lif3 = LIFNode(tau=2.0, detach_reset=True)
+        self.maxpool3 = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+
+        self.rpe_conv = nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=1, padding=1, bias=False)
+        self.rpe_bn = nn.BatchNorm2d(embed_dim)
+        self.rpe_lif = LIFNode(tau=2.0, detach_reset=True)
+
 
     def set_sample_config(self, sample_embed_dim):
         self.sample_embed_dim = sample_embed_dim
@@ -37,18 +60,44 @@ class PatchembedSuper(nn.Module):
         if self.scale:
             self.sampled_scale = self.super_embed_dim / sample_embed_dim
     def forward(self, x):
+        # T, B, C, H, W = x.shape
+        # assert H == self.img_size[0] and W == self.img_size[1], \
+        #     f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        
+        # x = F.conv2d(x.flatten(0, 1), self.sampled_weight, self.sampled_bias, stride=self.patch_size, padding=self.proj.padding, dilation=self.proj.dilation).flatten(2).transpose(1,2)
+        
+        # if self.scale:
+        #     return x * self.sampled_scale
+        # # _, H, W = x.shape
+        # # print(x.shape)
+        # x = x.reshape(T, B, -1, H//16, W//16).contiguous() # H, W needed change!
+        # x = self.lif(x) 
+        # x = x.flatten(-2).transpose(-1, -2)  # T,B,N,C
         T, B, C, H, W = x.shape
-        assert H == self.img_size[0] and W == self.img_size[1], \
-            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        
-        x = F.conv2d(x.flatten(0, 1), self.sampled_weight, self.sampled_bias, stride=self.patch_size, padding=self.proj.padding, dilation=self.proj.dilation).flatten(2).transpose(1,2)
-        
-        if self.scale:
-            return x * self.sampled_scale
-        # _, H, W = x.shape
-        # print(x.shape)
-        x = x.reshape(T, B, -1, H//16, W//16).contiguous() # H, W needed change!
-        x = self.lif(x) 
+        x = self.proj_conv(x.flatten(0, 1)) # have some fire value
+        x = self.proj_bn(x).reshape(T, B, -1, H, W).contiguous()
+        x = self.proj_lif(x).flatten(0, 1).contiguous()
+
+        x = self.proj_conv1(x)
+        x = self.proj_bn1(x).reshape(T, B, -1, H, W).contiguous()
+        x = self.proj_lif1(x).flatten(0, 1).contiguous()
+
+        x = self.proj_conv2(x)
+        x = self.proj_bn2(x).reshape(T, B, -1, H, W).contiguous()
+        x = self.proj_lif2(x).flatten(0, 1).contiguous()
+        x = self.maxpool2(x)
+
+        x = self.proj_conv3(x)
+        x = self.proj_bn3(x).reshape(T, B, -1, H//2, W//2).contiguous()
+        x = self.proj_lif3(x).flatten(0, 1).contiguous()
+        x = self.maxpool3(x)
+
+        x_feat = x.reshape(T, B, -1, H//4, W//4).contiguous()
+        x = self.rpe_conv(x)
+        x = self.rpe_bn(x).reshape(T, B, -1, H//4, W//4).contiguous()
+        x = self.rpe_lif(x)
+        x = x + x_feat
+
         x = x.flatten(-2).transpose(-1, -2)  # T,B,N,C
         return x
 

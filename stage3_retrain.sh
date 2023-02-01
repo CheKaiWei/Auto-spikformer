@@ -7,10 +7,23 @@ python supernet_train.py \
 --mode retrain \
 --dist-eval \
 --cfg ./experiments/subnet/Spikformer.yaml \
+--experiment_description 'stage3: spikformer version' \
+--opt adamw \
+--weight-decay 6e-2 \
+--lr 5e-4 \
+--min-lr 1e-5 \
+--sched cosine \
+--epochs 1000 \
+--patch_size 4 \
+--input-size 32 \
+--batch-size 128 \
+--warmup-epochs 20 \
+--warmup-lr 1e-5 \
+--epochs 300 \
+--mixup 0.5 \
+--cutmix 0 \
+--remode const \
+
+
 # --resume logs/pretrained_model/supernet-tiny.pth \
---experiment_description 'retrain from imagenet T' \
---opt sgd \
---weight-decay 1e-8 \
---lr 1e-2 \
---epochs 1000
 # --eval \

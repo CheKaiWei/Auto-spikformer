@@ -150,28 +150,12 @@ class Vision_TransformerSuper(nn.Module):
     def forward_features(self, x):
         B = x.shape[0]
         x = self.patch_embed_super(x)
-
-        #cls_tokens = self.cls_token[..., :self.sample_embed_dim[0]].expand(B, -1, -1)
-        #x = torch.cat((cls_tokens, x), dim=1)
-        #if self.abs_pos:
-        #    x = x + self.pos_embed[..., :self.sample_embed_dim[0]]
-
-        #x = F.dropout(x, p=self.sample_dropout, training=self.training)
-
-        # start_time = time.time()
         for blk in self.blocks:
             x = blk(x)
-        # print(time.time()-start_time)
-        #if self.pre_norm:
-            x = self.norm(x)
-
-        #if self.gp:
-        #    return torch.mean(x[:, 1:] , dim=1)
-
         return x.mean(2)
 
     def forward(self, x):
-        T = 4
+        T = 4 # TODO can be search
         x = (x.unsqueeze(0)).repeat(T, 1, 1, 1, 1)
         x = self.forward_features(x)
         x = self.head(x.mean(0))
