@@ -161,47 +161,54 @@ class AttentionSuper(nn.Module):
             total_flops += self.max_relative_position * sequence_length * sequence_length + sequence_length * self.sample_qk_embed_dim / 2.0
         return total_flops
 
+    # def forward(self, x):
+    #     B, N, C = x.shape
+    #     qkv = self.qkv(x).reshape(B, N, 3, self.sample_num_heads, -1).permute(2, 0, 3, 1, 4)
+    #     q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+    #     attn = (q @ k.transpose(-2, -1)) * self.sample_scale
+    #     if self.relative_position:
+    #         r_p_k = self.rel_pos_embed_k(N, N)
+    #         attn = attn + (q.permute(2, 0, 1, 3).reshape(N, self.sample_num_heads * B, -1) @ r_p_k.transpose(2, 1)) \
+    #             .transpose(1, 0).reshape(B, self.sample_num_heads, N, N) * self.sample_scale
+
+    #     attn = attn.softmax(dim=-1)
+    #     attn = self.attn_drop(attn)
+
+    #     x = (attn @ v).transpose(1,2).reshape(B, N, -1)
+    #     if self.relative_position:
+    #         r_p_v = self.rel_pos_embed_v(N, N)
+    #         attn_1 = attn.permute(2, 0, 1, 3).reshape(N, B * self.sample_num_heads, -1)
+    #         # The size of attention is (B, num_heads, N, N), reshape it to (N, B*num_heads, N) and do batch matmul with
+    #         # the relative position embedding of V (N, N, head_dim) get shape like (N, B*num_heads, head_dim). We reshape it to the
+    #         # same size as x (B, num_heads, N, hidden_dim)
+    #         x = x + (attn_1 @ r_p_v).transpose(1, 0).reshape(B, self.sample_num_heads, N, -1).transpose(2,1).reshape(B, N, -1)
+
+    #     if self.fc_scale:
+    #         x = x * (self.super_embed_dim / self.sample_qk_embed_dim)
+    #     x = self.proj(x)
+    #     x = self.proj_drop(x)
+    #     return x
+
     def forward(self, x):
-        # T,B,N,C = x.shape
-        # x_for_qkv = x.flatten(0, 1)  # TB, N, C
-
-        # qkv = self.qkv(x).reshape(B, N, 3, self.sample_num_heads, -1).permute(2, 0, 3, 1, 4)
-        # q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
-
-        # q_linear_out = self.q_lif(q)
-        # q = q_linear_out.reshape(T, B, N, self.sample_num_heads, C//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
-
-        # k_linear_out = self.k_lif(k)
-        # k = k_linear_out.reshape(T, B, N, self.sample_num_heads, C//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
-
-        # v_linear_out = self.v_lif(v)
-        # v = v_linear_out.reshape(T, B, N, self.sample_num_heads, C//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
-
-        # attn = (q @ k.transpose(-2, -1)) * self.sample_scale
-        # x = (attn @ v).transpose(2, 3).reshape(T, B, N, C).contiguous()
-        # x = self.attn_lif(x)
-        # x = x.flatten(0, 1)
-        # x = self.proj_lif(self.proj_bn(self.proj_linear(x).transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C))
-
-        # return x
 
         T,B,N,C = x.shape
 
-        x_for_qkv = x.flatten(0, 1)  # TB, N, C
-        q_linear_out = self.q_linear(x_for_qkv)  # [TB, N, C]
-        q_linear_out = self.q_bn(q_linear_out. transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
-        q_linear_out = self.q_lif(q_linear_out)
-        q = q_linear_out.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+        x = x.flatten(0, 1)  # TB, N, C
+        qkv = self.qkv(x).reshape(T*B, N, 3, C).permute(2, 0, 1, 3)
+        q, k, v = qkv[0], qkv[1], qkv[2]
 
-        k_linear_out = self.k_linear(x_for_qkv)
-        k_linear_out = self.k_bn(k_linear_out. transpose(-1, -2)).transpose(-1, -2).reshape(T,B,C,N).contiguous()
-        k_linear_out = self.k_lif(k_linear_out)
-        k = k_linear_out.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+        q = self.q_bn(q.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        q = self.q_lif(q)
+        q = q.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
 
-        v_linear_out = self.v_linear(x_for_qkv)
-        v_linear_out = self.v_bn(v_linear_out. transpose(-1, -2)).transpose(-1, -2).reshape(T,B,C,N).contiguous()
-        v_linear_out = self.v_lif(v_linear_out)
-        v = v_linear_out.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+        k = self.k_bn(k.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        k = self.k_lif(k)
+        k = k.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+
+        v = self.v_bn(v.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        v = self.v_lif(v)
+        v = v.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         x = attn @ v
@@ -210,3 +217,19 @@ class AttentionSuper(nn.Module):
         x = x.flatten(0, 1)
         x = self.proj_lif(self.proj_bn(self.proj_linear(x).transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C))
         return x
+
+
+        # q_linear_out = self.q_linear(x_for_qkv)  # [TB, N, C]
+        # q_linear_out = self.q_bn(q_linear_out. transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        # q_linear_out = self.q_lif(q_linear_out)
+        # q = q_linear_out.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+
+        # k_linear_out = self.k_linear(x_for_qkv)
+        # k_linear_out = self.k_bn(k_linear_out. transpose(-1, -2)).transpose(-1, -2).reshape(T,B,C,N).contiguous()
+        # k_linear_out = self.k_lif(k_linear_out)
+        # k = k_linear_out.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+
+        # v_linear_out = self.v_linear(x_for_qkv)
+        # v_linear_out = self.v_bn(v_linear_out. transpose(-1, -2)).transpose(-1, -2).reshape(T,B,C,N).contiguous()
+        # v_linear_out = self.v_lif(v_linear_out)
+        # v = v_linear_out.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
