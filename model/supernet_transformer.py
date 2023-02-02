@@ -177,6 +177,26 @@ class MLP(nn.Module):
         self.c_hidden = hidden_features
         self.c_output = out_features
 
+        self.fc1 = LinearSuper(super_in_dim=in_features, super_out_dim=hidden_features)
+        self.fc2 = LinearSuper(super_in_dim=hidden_features, super_out_dim=out_features)
+
+    def set_sample_config(self, sample_embed_dim):
+        # print('!!!!!',sample_embed_dim)
+        # self.sample_embed_dim = sample_embed_dim
+        # self.sampled_weight = self.proj.weight[:sample_embed_dim, ...]
+        # self.sampled_bias = self.proj.bias[:self.sample_embed_dim, ...]
+        # if self.scale:
+        #     self.sampled_scale = self.super_embed_dim / sample_embed_dim
+
+        self.sample_embed_dim = sample_embed_dim
+        self.sampled_weight = self.proj_conv3.weight[:sample_embed_dim, ...]
+
+        self.sampled_bn_weight = self.proj_bn3.weight[:sample_embed_dim, ...]
+        self.sampled_bn_bias = self.proj_bn3.bias[:self.sample_embed_dim, ...]
+        self.sampled_bn_mean = self.proj_bn3.running_mean[:sample_embed_dim, ...]
+        self.sampled_bn_std = self.proj_bn3.running_var[:self.sample_embed_dim, ...]
+
+
     def forward(self, x):
         T,B,N,C = x.shape
         x_ = x.flatten(0, 1)
@@ -238,7 +258,7 @@ class TransformerEncoderLayer(nn.Module):
 
         self.fc1 = LinearSuper(super_in_dim=self.super_embed_dim, super_out_dim=self.super_ffn_embed_dim_this_layer)
         self.fc2 = LinearSuper(super_in_dim=self.super_ffn_embed_dim_this_layer, super_out_dim=self.super_embed_dim)
-        self.mlp = MLP(in_features=self.super_embed_dim, hidden_features=self.super_embed_dim)
+        self.mlp = MLP(in_features=self.super_embed_dim, hidden_features=self.super_ffn_embed_dim_this_layer, out_features=self.super_embed_dim)
 
     def set_sample_config(self, is_identity_layer, sample_embed_dim=None, sample_mlp_ratio=None, sample_num_heads=None, sample_dropout=None, sample_attn_dropout=None, sample_out_dim=None):
 
@@ -260,8 +280,8 @@ class TransformerEncoderLayer(nn.Module):
 
         self.attn.set_sample_config(sample_q_embed_dim=self.sample_num_heads_this_layer*64, sample_num_heads=self.sample_num_heads_this_layer, sample_in_embed_dim=self.sample_embed_dim)
 
-        self.fc1.set_sample_config(sample_in_dim=self.sample_embed_dim, sample_out_dim=self.sample_ffn_embed_dim_this_layer)
-        self.fc2.set_sample_config(sample_in_dim=self.sample_ffn_embed_dim_this_layer, sample_out_dim=self.sample_out_dim)
+        self.mlp.fc1.set_sample_config(sample_in_dim=self.sample_embed_dim, sample_out_dim=self.sample_ffn_embed_dim_this_layer)
+        self.mlp.fc2.set_sample_config(sample_in_dim=self.sample_ffn_embed_dim_this_layer, sample_out_dim=self.sample_out_dim)
 
         self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
 
@@ -274,11 +294,11 @@ class TransformerEncoderLayer(nn.Module):
         Returns:
             encoded output of shape `(batch, patch_num, sample_embed_dim)`
         """
-        # if self.is_identity_layer:
-        #     return x
+        if self.is_identity_layer:
+            return x
 
-        # # compute attn
-        # # start_time = time.time()
+        # compute attn
+        # start_time = time.time()
 
         # residual = x
         # x = self.maybe_layer_norm(self.attn_layer_norm, x, before=True)
