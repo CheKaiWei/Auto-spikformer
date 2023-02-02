@@ -7,16 +7,15 @@ CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --mode retrain \
 --dist-eval \
 --cfg ./experiments/subnet/Spikformer.yaml \
---experiment_description 'stage3: spikformer version' \
+--experiment_description 'stage3: spikformer version input-size=32' \
 --opt adamw \
 --weight-decay 6e-2 \
 --lr 5e-4 \
 --min-lr 1e-5 \
 --sched cosine \
---epochs 1000 \
 --patch_size 4 \
---input-size 224 \
---batch-size 2 \
+--input-size 32 \
+--batch-size 128 \
 --warmup-epochs 20 \
 --warmup-lr 1e-5 \
 --epochs 300 \
