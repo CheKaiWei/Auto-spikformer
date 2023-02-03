@@ -47,7 +47,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         model_module = unwrap_model(model)
         print(config)
         model_module.set_sample_config(config=config)
-        print(model_module.get_sampled_params_numel(config))
+        # print(model_module.get_sampled_params_numel(config))
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device, non_blocking=True)

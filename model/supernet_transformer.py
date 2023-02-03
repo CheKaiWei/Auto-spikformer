@@ -177,36 +177,50 @@ class MLP(nn.Module):
         self.c_hidden = hidden_features
         self.c_output = out_features
 
+        self.sample_embed_dim = None
+
+        self.sampled_bn_weight = None
+        self.sample_bn_bias = None
+        self.sample_bn_mean = None
+        self.sample_bn_var = None
+
         self.fc1 = LinearSuper(super_in_dim=in_features, super_out_dim=hidden_features)
         self.fc2 = LinearSuper(super_in_dim=hidden_features, super_out_dim=out_features)
 
     def set_sample_config(self, sample_embed_dim):
         # print('!!!!!',sample_embed_dim)
-        # self.sample_embed_dim = sample_embed_dim
+        self.sample_embed_dim = sample_embed_dim
         # self.sampled_weight = self.proj.weight[:sample_embed_dim, ...]
         # self.sampled_bias = self.proj.bias[:self.sample_embed_dim, ...]
         # if self.scale:
         #     self.sampled_scale = self.super_embed_dim / sample_embed_dim
 
-        self.sample_embed_dim = sample_embed_dim
-        self.sampled_weight = self.proj_conv3.weight[:sample_embed_dim, ...]
+        # self.sample_embed_dim = sample_embed_dim
+        # self.sampled_weight = self.proj_conv3.weight[:sample_embed_dim, ...]
 
-        self.sampled_bn_weight = self.proj_bn3.weight[:sample_embed_dim, ...]
-        self.sampled_bn_bias = self.proj_bn3.bias[:self.sample_embed_dim, ...]
-        self.sampled_bn_mean = self.proj_bn3.running_mean[:sample_embed_dim, ...]
-        self.sampled_bn_std = self.proj_bn3.running_var[:self.sample_embed_dim, ...]
+        self.sampled_bn_weight = self.fc1_bn.weight[:self.sample_embed_dim, ...] ## TODO whether I can use this function to do n1?
+        self.sampled_bn_bias = self.fc1_bn.bias[:self.sample_embed_dim, ...]
+        self.sampled_bn_mean = self.fc1_bn.running_mean[:self.sample_embed_dim, ...]
+        self.sampled_bn_std = self.fc1_bn.running_var[:self.sample_embed_dim, ...]
 
 
     def forward(self, x):
         T,B,N,C = x.shape
-        x_ = x.flatten(0, 1)
-        x = self.fc1_linear(x_)
-        x = self.fc1_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, self.c_hidden).contiguous()
+        x = x.flatten(0, 1)
+        x = self.fc1(x)
+        x = nn.functional.batch_norm(x.transpose(-1, -2), running_mean=self.sampled_bn_mean, running_var=self.sampled_bn_std,\
+             weight=self.sampled_bn_weight, bias=self.sampled_bn_bias, training=True, momentum=0.9)
+        x = x.transpose(-1, -2).reshape(T, B, N, self.c_hidden).contiguous()
         x = self.fc1_lif(x)
 
-        x = self.fc2_linear(x.flatten(0,1))
+        x = self.fc2(x.flatten(0,1))
         x = self.fc2_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+
+        # x = nn.functional.batch_norm(x.transpose(-1, -2), running_mean=self.sampled_bn_mean, running_var=self.sampled_bn_std,\
+        #      weight=self.sampled_bn_weight, bias=self.sampled_bn_bias, training=True, momentum=0.9)
+        # x = x.transpose(-1, -2).reshape(T, B, N, C).contiguous()
         x = self.fc2_lif(x)
+
         return x
 
 
@@ -282,6 +296,7 @@ class TransformerEncoderLayer(nn.Module):
 
         self.mlp.fc1.set_sample_config(sample_in_dim=self.sample_embed_dim, sample_out_dim=self.sample_ffn_embed_dim_this_layer)
         self.mlp.fc2.set_sample_config(sample_in_dim=self.sample_ffn_embed_dim_this_layer, sample_out_dim=self.sample_out_dim)
+        self.mlp.set_sample_config(self.sample_ffn_embed_dim_this_layer)
 
         self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
 

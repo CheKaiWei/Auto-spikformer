@@ -67,11 +67,11 @@ class PatchembedSuper(nn.Module):
         #     self.sampled_scale = self.super_embed_dim / sample_embed_dim
 
         self.sample_embed_dim = sample_embed_dim
-        self.sampled_weight = self.proj_conv3.weight[:sample_embed_dim, ...]
+        self.sampled_weight = self.proj_conv3.weight[:self.sample_embed_dim, ...]
 
-        self.sampled_bn_weight = self.proj_bn3.weight[:sample_embed_dim, ...]
+        self.sampled_bn_weight = self.proj_bn3.weight[:self.sample_embed_dim, ...]
         self.sampled_bn_bias = self.proj_bn3.bias[:self.sample_embed_dim, ...]
-        self.sampled_bn_mean = self.proj_bn3.running_mean[:sample_embed_dim, ...]
+        self.sampled_bn_mean = self.proj_bn3.running_mean[:self.sample_embed_dim, ...]
         self.sampled_bn_std = self.proj_bn3.running_var[:self.sample_embed_dim, ...]
 
 
