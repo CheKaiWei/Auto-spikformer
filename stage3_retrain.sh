@@ -18,13 +18,11 @@ CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --batch-size 128 \
 --warmup-epochs 20 \
 --warmup-lr 1e-5 \
---epochs 300 \
+--epochs 400 \
 --mixup 0.5 \
 --mixup-off-epoch 200 \
 --cutmix 0 \
 --remode const \
 --color-jitter 0 \
-
-
-# --resume logs/pretrained_model/supernet-tiny.pth \
+--resume logs/stage3_retrain/log_20230202_113919/checkpoint.pth \
 # --eval \
