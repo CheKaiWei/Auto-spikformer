@@ -137,20 +137,16 @@ class AttentionSuper(nn.Module):
 
         self.sample_in_embed_dim = sample_in_embed_dim
         self.sample_num_heads = sample_num_heads
-        print('!!!!',self.change_qkv)
         if not self.change_qkv:
-            print('wrong!')
             self.sample_qk_embed_dim = self.super_embed_dim
             self.sample_scale = (sample_in_embed_dim // self.sample_num_heads) ** -0.5
 
         else:
-            print('!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
             self.sample_qk_embed_dim = sample_q_embed_dim
             self.sample_scale = (self.sample_qk_embed_dim // self.sample_num_heads) ** -0.5
-            print('!!')
-        print(sample_in_embed_dim, 3*self.sample_qk_embed_dim)
+        # print(sample_in_embed_dim, 3*self.sample_qk_embed_dim)
         self.qkv.set_sample_config(sample_in_dim=sample_in_embed_dim, sample_out_dim=3*self.sample_qk_embed_dim)
-        print(self.qkv)
+        # print(self.qkv)
         self.proj.set_sample_config(sample_in_dim=self.sample_qk_embed_dim, sample_out_dim=sample_in_embed_dim)
         if self.relative_position:
             self.rel_pos_embed_k.set_sample_config(self.sample_qk_embed_dim // sample_num_heads)
@@ -212,12 +208,12 @@ class AttentionSuper(nn.Module):
         T,B,N,C = x.shape
 
         x = x.flatten(0, 1)  # TB, N, C
-        print(x.shape)
+        # print(x.shape)
         qkv = self.qkv(x)
-        print(qkv.shape)
+        # print(qkv.shape)
         # C_sample = qkv.shape[-1]//3
         C_sample = self.sample_qk_embed_dim
-        print('!',self.sample_qk_embed_dim)
+        # print('!',self.sample_qk_embed_dim)
 
         qkv = qkv.reshape(T*B, N, 3, C_sample).permute(2, 0, 1, 3)
         q, k, v = qkv[0], qkv[1], qkv[2]

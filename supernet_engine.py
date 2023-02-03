@@ -137,8 +137,8 @@ def evaluate(data_loader, model, device, amp=True, choices=None, mode='super', r
 
 
     print("sampled model config: {}".format(config))
-    parameters = model_module.get_sampled_params_numel(config)
-    print("sampled model parameters: {}".format(parameters))
+    # parameters = model_module.get_sampled_params_numel(config)
+    # print("sampled model parameters: {}".format(parameters))
 
     for images, target in metric_logger.log_every(data_loader, 10, header):
         images = images.to(device, non_blocking=True)
