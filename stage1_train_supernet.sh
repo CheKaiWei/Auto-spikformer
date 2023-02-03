@@ -1,4 +1,4 @@
-CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
+CUDA_LAUNCH_BLOCKING=0 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --data-set CIFAR10 \
 --data-path /home/hanjing/CHE/SpikeDHS_CLA/data \
 --gp \
@@ -7,10 +7,21 @@ CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --mode super \
 --dist-eval \
 --cfg ./experiments/supernet/supernet-T.yaml \
---epochs 1000 \
---warmup-epochs 10 \
 --batch-size 64 \
---experiment_description 'train supernet: from imagenet checkpoint train' \
---opt sgd \
---weight-decay 1e-8 \
---lr 1e-2 \
+--experiment_description 'train supernet: auto-spikformer structure=T' \
+--opt adamw \
+--weight-decay 6e-2 \
+--lr 5e-4 \
+--min-lr 1e-5 \
+--sched cosine \
+--patch_size 4 \
+--input-size 32 \
+--batch-size 128 \
+--warmup-epochs 20 \
+--warmup-lr 1e-5 \
+--epochs 1000 \
+--mixup 0.5 \
+--mixup-off-epoch 200 \
+--cutmix 0 \
+--remode const \
+--color-jitter 0 \
