@@ -159,8 +159,6 @@ class Vision_TransformerSuper(nn.Module):
         T = 4 # TODO can be search
         x = (x.unsqueeze(0)).repeat(T, 1, 1, 1, 1)
         x = self.forward_features(x)
-        print('!!!',x.shape)
-        a=ddd
         x = self.head(x.mean(0))
         return x
 
