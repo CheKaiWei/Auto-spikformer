@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
+CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --data-set CIFAR10 \
 --data-path /home/hanjing/CHE/SpikeDHS_CLA/data \
 --gp \
@@ -6,8 +6,8 @@ CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --relative_position \
 --mode retrain \
 --dist-eval \
---cfg ./experiments/subnet/AutoFormer-T.yaml \
---experiment_description 'stage3: auto-spikformer structure=T' \
+--cfg ./experiments/subnet/Spikformer.yaml \
+--experiment_description 'stage3: auto-spikformer structure=Spikformer' \
 --opt adamw \
 --weight-decay 6e-2 \
 --lr 5e-4 \
