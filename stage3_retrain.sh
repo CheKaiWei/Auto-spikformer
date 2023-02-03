@@ -6,7 +6,7 @@ CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --relative_position \
 --mode retrain \
 --dist-eval \
---cfg ./experiments/subnet/Spikformer.yaml \
+--cfg ./experiments/subnet/AutoFormer-T.yaml \
 --experiment_description 'stage3: spikformer version input-size=32' \
 --opt adamw \
 --weight-decay 6e-2 \

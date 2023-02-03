@@ -7,6 +7,7 @@ from model.module.Linear_super import LinearSuper
 from model.module.layernorm_super import LayerNormSuper
 from model.module.multihead_super import AttentionSuper
 from model.module.embedding_super import PatchembedSuper
+from model.module.BN_super import BNSuper
 from model.utils import trunc_normal_
 from model.utils import DropPath
 import numpy as np
@@ -158,6 +159,8 @@ class Vision_TransformerSuper(nn.Module):
         T = 4 # TODO can be search
         x = (x.unsqueeze(0)).repeat(T, 1, 1, 1, 1)
         x = self.forward_features(x)
+        print('!!!',x.shape)
+        a=ddd
         x = self.head(x.mean(0))
         return x
 
@@ -166,59 +169,30 @@ class MLP(nn.Module):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1_linear = nn.Linear(in_features, hidden_features)
-        self.fc1_bn = nn.BatchNorm1d(hidden_features)
-        self.fc1_lif = LIFNode(tau=2.0, detach_reset=True)
-
-        self.fc2_linear = nn.Linear(hidden_features, out_features)
-        self.fc2_bn = nn.BatchNorm1d(out_features)
-        self.fc2_lif = LIFNode(tau=2.0, detach_reset=True)
-
         self.c_hidden = hidden_features
         self.c_output = out_features
 
-        self.sample_embed_dim = None
-
-        self.sampled_bn_weight = None
-        self.sample_bn_bias = None
-        self.sample_bn_mean = None
-        self.sample_bn_var = None
-
         self.fc1 = LinearSuper(super_in_dim=in_features, super_out_dim=hidden_features)
+        self.fc1_bn = BNSuper(super_out_dim=hidden_features, dim_1d_2d='1d')
+        self.fc1_lif = LIFNode(tau=2.0, detach_reset=True)
+
         self.fc2 = LinearSuper(super_in_dim=hidden_features, super_out_dim=out_features)
-
-    def set_sample_config(self, sample_embed_dim):
-        # print('!!!!!',sample_embed_dim)
-        self.sample_embed_dim = sample_embed_dim
-        # self.sampled_weight = self.proj.weight[:sample_embed_dim, ...]
-        # self.sampled_bias = self.proj.bias[:self.sample_embed_dim, ...]
-        # if self.scale:
-        #     self.sampled_scale = self.super_embed_dim / sample_embed_dim
-
-        # self.sample_embed_dim = sample_embed_dim
-        # self.sampled_weight = self.proj_conv3.weight[:sample_embed_dim, ...]
-
-        self.sampled_bn_weight = self.fc1_bn.weight[:self.sample_embed_dim, ...] ## TODO whether I can use this function to do n1?
-        self.sampled_bn_bias = self.fc1_bn.bias[:self.sample_embed_dim, ...]
-        self.sampled_bn_mean = self.fc1_bn.running_mean[:self.sample_embed_dim, ...]
-        self.sampled_bn_std = self.fc1_bn.running_var[:self.sample_embed_dim, ...]
+        # self.fc2_bn = nn.BatchNorm1d(out_features)
+        self.fc2_bn = BNSuper(super_out_dim=out_features, dim_1d_2d='1d')
+        self.fc2_lif = LIFNode(tau=2.0, detach_reset=True)
 
 
     def forward(self, x):
         T,B,N,C = x.shape
         x = x.flatten(0, 1)
         x = self.fc1(x)
-        x = nn.functional.batch_norm(x.transpose(-1, -2), running_mean=self.sampled_bn_mean, running_var=self.sampled_bn_std,\
-             weight=self.sampled_bn_weight, bias=self.sampled_bn_bias, training=True, momentum=0.9)
-        x = x.transpose(-1, -2).reshape(T, B, N, self.c_hidden).contiguous()
+        self.c_hidden = x.shape[-1]
+        x = self.fc1_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, self.c_hidden).contiguous()
         x = self.fc1_lif(x)
 
         x = self.fc2(x.flatten(0,1))
+        # print(x.shape)
         x = self.fc2_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
-
-        # x = nn.functional.batch_norm(x.transpose(-1, -2), running_mean=self.sampled_bn_mean, running_var=self.sampled_bn_std,\
-        #      weight=self.sampled_bn_weight, bias=self.sampled_bn_bias, training=True, momentum=0.9)
-        # x = x.transpose(-1, -2).reshape(T, B, N, C).contiguous()
         x = self.fc2_lif(x)
 
         return x
@@ -296,7 +270,8 @@ class TransformerEncoderLayer(nn.Module):
 
         self.mlp.fc1.set_sample_config(sample_in_dim=self.sample_embed_dim, sample_out_dim=self.sample_ffn_embed_dim_this_layer)
         self.mlp.fc2.set_sample_config(sample_in_dim=self.sample_ffn_embed_dim_this_layer, sample_out_dim=self.sample_out_dim)
-        self.mlp.set_sample_config(self.sample_ffn_embed_dim_this_layer)
+        self.mlp.fc1_bn.set_sample_config(self.sample_ffn_embed_dim_this_layer)
+        self.mlp.fc2_bn.set_sample_config(self.sample_out_dim)
 
         self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
 

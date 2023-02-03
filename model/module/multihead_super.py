@@ -6,6 +6,7 @@ from .Linear_super import LinearSuper
 from .qkv_super import qkv_super
 from ..utils import trunc_normal_
 from spikingjelly.activation_based.neuron import LIFNode
+from model.module.BN_super import BNSuper
 
 def softmax(x, dim, onnx_trace=False):
     if onnx_trace:
@@ -99,21 +100,25 @@ class AttentionSuper(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        self.q_linear = nn.Linear(super_embed_dim, super_embed_dim)
-        self.q_bn = nn.BatchNorm1d(super_embed_dim)
+        # self.q_linear = nn.Linear(super_embed_dim, super_embed_dim)
+        # self.q_bn = nn.BatchNorm1d(super_embed_dim)
+        self.q_bn = BNSuper(super_out_dim=super_embed_dim, dim_1d_2d='1d')
         self.q_lif = LIFNode(tau=2.0, detach_reset=True)
 
-        self.k_linear = nn.Linear(super_embed_dim, super_embed_dim)
-        self.k_bn = nn.BatchNorm1d(super_embed_dim)
+        # self.k_linear = nn.Linear(super_embed_dim, super_embed_dim)
+        # self.k_bn = nn.BatchNorm1d(super_embed_dim)
+        self.k_bn = BNSuper(super_out_dim=super_embed_dim, dim_1d_2d='1d')
         self.k_lif = LIFNode(tau=2.0, detach_reset=True)
 
-        self.v_linear = nn.Linear(super_embed_dim, super_embed_dim)
-        self.v_bn = nn.BatchNorm1d(super_embed_dim)
+        # self.v_linear = nn.Linear(super_embed_dim, super_embed_dim)
+        # self.v_bn = nn.BatchNorm1d(super_embed_dim)
+        self.v_bn = BNSuper(super_out_dim=super_embed_dim, dim_1d_2d='1d')
         self.v_lif = LIFNode(tau=2.0, detach_reset=True)
         self.attn_lif = LIFNode(tau=2.0, v_threshold=0.5, detach_reset=True)
 
-        self.proj_linear = nn.Linear(super_embed_dim, super_embed_dim)
-        self.proj_bn = nn.BatchNorm1d(super_embed_dim)
+        # self.proj_linear = nn.Linear(super_embed_dim, super_embed_dim)
+        # self.proj_bn = nn.BatchNorm1d(super_embed_dim)
+        self.proj_bn = BNSuper(super_out_dim=super_embed_dim, dim_1d_2d='1d')
         self.proj_lif = LIFNode(tau=2.0, detach_reset=True)
 
 
@@ -145,6 +150,13 @@ class AttentionSuper(nn.Module):
         if self.relative_position:
             self.rel_pos_embed_k.set_sample_config(self.sample_qk_embed_dim // sample_num_heads)
             self.rel_pos_embed_v.set_sample_config(self.sample_qk_embed_dim // sample_num_heads)
+
+        self.q_bn.set_sample_config(self.sample_qk_embed_dim)
+        self.k_bn.set_sample_config(self.sample_qk_embed_dim)
+        self.v_bn.set_sample_config(self.sample_qk_embed_dim)
+        self.proj_bn.set_sample_config(self.sample_in_embed_dim)
+
+
     def calc_sampled_param_num(self):
 
         return 0
@@ -195,27 +207,34 @@ class AttentionSuper(nn.Module):
         T,B,N,C = x.shape
 
         x = x.flatten(0, 1)  # TB, N, C
-        qkv = self.qkv(x).reshape(T*B, N, 3, C).permute(2, 0, 1, 3)
+        # print(x.shape)
+        qkv = self.qkv(x)
+        # print(qkv.shape)
+        # C_sample = qkv.shape[-1]//3
+        C_sample = self.sample_qk_embed_dim
+        qkv = qkv.reshape(T*B, N, 3, C_sample).permute(2, 0, 1, 3)
         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        q = self.q_bn(q.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        q = self.q_bn(q.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C_sample).contiguous()
         q = self.q_lif(q)
-        q = q.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+        q = q.reshape(T, B, N, self.sample_num_heads, C_sample//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
 
-        k = self.k_bn(k.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        k = self.k_bn(k.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C_sample).contiguous()
         k = self.k_lif(k)
-        k = k.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+        k = k.reshape(T, B, N, self.sample_num_heads, C_sample//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
 
-        v = self.v_bn(v.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C).contiguous()
+        v = self.v_bn(v.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C_sample).contiguous()
         v = self.v_lif(v)
-        v = v.reshape(T, B, N, self.num_heads, C//self.num_heads).permute(0, 1, 3, 2, 4).contiguous()
+        v = v.reshape(T, B, N, self.sample_num_heads, C_sample//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
+
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         x = attn @ v
-        x = x.transpose(2, 3).reshape(T, B, N, C).contiguous()
+        x = x.transpose(2, 3).reshape(T, B, N, C_sample).contiguous()
         x = self.attn_lif(x)
         x = x.flatten(0, 1)
-        x = self.proj_lif(self.proj_bn(self.proj_linear(x).transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C))
+        
+        x = self.proj_lif(self.proj_bn(self.proj(x).transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C))
         return x
 
 
