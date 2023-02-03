@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
+CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --data-set CIFAR10 \
 --data-path /home/hanjing/CHE/SpikeDHS_CLA/data \
 --gp \
@@ -14,7 +14,7 @@ CUDA_VISIBLE_DEVICES=0 python supernet_train.py \
 --sched cosine \
 --patch_size 4 \
 --input-size 32 \
---batch-size 128 \
+--batch-size 2 \
 --warmup-epochs 20 \
 --warmup-lr 1e-5 \
 --epochs 300 \

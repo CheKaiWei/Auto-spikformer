@@ -39,7 +39,7 @@ class qkv_super(nn.Linear):
     def set_sample_config(self, sample_in_dim, sample_out_dim):
         self.sample_in_dim = sample_in_dim
         self.sample_out_dim = sample_out_dim
-        print('inside',sample_out_dim)
+        # print('inside',sample_out_dim)
         self._sample_parameters()
 
     def _sample_parameters(self):

@@ -220,6 +220,7 @@ class AttentionSuper(nn.Module):
 
         q = self.q_bn(q.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C_sample).contiguous()
         q = self.q_lif(q)
+        # print('q',q.shape,C_sample,self.sample_num_heads)
         q = q.reshape(T, B, N, self.sample_num_heads, C_sample//self.sample_num_heads).permute(0, 1, 3, 2, 4).contiguous()
 
         k = self.k_bn(k.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, C_sample).contiguous()
