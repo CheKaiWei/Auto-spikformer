@@ -194,7 +194,7 @@ def get_args_parser():
 def main(args):
     
     ### FITLOG ###
-    fitlog_debug = False
+    fitlog_debug = True
     repo = git.Repo(search_parent_directories=True)
     git_branch = path = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
@@ -300,7 +300,25 @@ def main(args):
                                     max_relative_position=args.max_relative_position,
                                     relative_position=args.relative_position,
                                     change_qkv=args.change_qkv, abs_pos=not args.no_abs_pos)
-    
+    spikformer_checkpoint = torch.load('logs/model_best.pth.tar')
+    spikformer_weight = spikformer_checkpoint['state_dict']
+    print(spikformer_weight.keys())
+    print('-------')
+    for key in list(spikformer_weight.keys()):
+        if 'norm1' in key or 'norm2' in key:
+            del spikformer_weight[key]
+        elif 'patch_embed' in key:
+            new_k = key.replace('patch_embed','patch_embed_super')
+            spikformer_weight[new_k] = spikformer_weight.pop(key)
+        elif 'block' in key:
+            new_k = key.replace('block','blocks')
+            spikformer_weight[new_k] = spikformer_weight.pop(key)
+
+        
+    print(spikformer_weight.keys())
+    model.load_state_dict(spikformer_weight, strict=False)
+    # a=ccc
+
     functional.set_step_mode(model, 'm')
 
     choices = {'num_heads': cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': cfg.SEARCH_SPACE.MLP_RATIO,

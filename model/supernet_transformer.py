@@ -70,7 +70,7 @@ class Vision_TransformerSuper(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         trunc_normal_(self.cls_token, std=.02)
 
-        # self.pos_drop = nn.Dropout(p=drop_rate)
+        self.pos_drop = nn.Dropout(p=drop_rate)
         if self.pre_norm:
             self.norm = LayerNormSuper(super_embed_dim=embed_dim)
 
@@ -238,7 +238,9 @@ class TransformerEncoderLayer(nn.Module):
 
         self.fc1 = LinearSuper(super_in_dim=self.super_embed_dim, super_out_dim=self.super_ffn_embed_dim_this_layer)
         self.fc2 = LinearSuper(super_in_dim=self.super_ffn_embed_dim_this_layer, super_out_dim=self.super_embed_dim)
-        self.mlp = MLP(in_features=self.super_embed_dim, hidden_features=self.super_embed_dim)
+        self.mlp = MLP(in_features=self.super_embed_dim, hidden_features=self.super_ffn_embed_dim_this_layer, out_features=self.super_embed_dim)
+        # print(self.mlp.fc1_linear)
+        # print(self.mlp.fc2_linear)
 
     def set_sample_config(self, is_identity_layer, sample_embed_dim=None, sample_mlp_ratio=None, sample_num_heads=None, sample_dropout=None, sample_attn_dropout=None, sample_out_dim=None):
 

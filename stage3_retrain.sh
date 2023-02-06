@@ -24,5 +24,5 @@ CUDA_VISIBLE_DEVICES=1 python supernet_train.py \
 --cutmix 0 \
 --remode const \
 --color-jitter 0 \
---resume logs/stage3_retrain/log_20230202_113919/checkpoint.pth \
+# --resume logs/stage3_retrain/log_20230202_113919/checkpoint.pth \
 # --eval \
