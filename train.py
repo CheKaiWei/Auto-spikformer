@@ -96,7 +96,7 @@ parser.add_argument('--patch-size', type=int, default=None, metavar='N',
 parser.add_argument('--mlp-ratio', type=int, default=None, metavar='N',
                     help='expand ration of embedding dimension in MLP block')
 # Dataset / Model parameters
-parser.add_argument('-data-dir', metavar='DIR',default="/home/hanjing/CHE/data/",
+parser.add_argument('-data-dir', metavar='DIR',default="/home/hanjing/CHE/data",
                     help='path to dataset')
 parser.add_argument('--dataset', '-d', metavar='NAME', default='torch/cifar10',
                     help='dataset type (default: ImageFolder/ImageTar if empty)')
@@ -490,6 +490,7 @@ def main():
     if args.local_rank == 0:
         _logger.info('Scheduled epochs: {}'.format(num_epochs))
 
+    print('!!!',args.data_dir)
     # create the train and eval datasets
     dataset_train = create_dataset(
         args.dataset,

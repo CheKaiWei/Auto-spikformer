@@ -6,7 +6,7 @@ from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg
 import torch.nn.functional as F
 from functools import partial
-from sj_dropout import SN_Droppath
+# from sj_dropout import SN_Droppath
 __all__ = ['spikformer']
 
 
@@ -97,7 +97,7 @@ class Block(nn.Module):
         self.norm1 = norm_layer(dim)
         self.attn = SSA(dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
                               attn_drop=attn_drop, proj_drop=drop, sr_ratio=sr_ratio)
-        self.drop_path = SN_Droppath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(in_features=dim, hidden_features=mlp_hidden_dim, drop=drop)
