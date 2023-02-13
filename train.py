@@ -40,6 +40,9 @@ from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler
 from timm.utils import ApexScaler, NativeScaler
 import model
+from timm.utils.model import unwrap_model
+from model_config import model_cfg, update_config_from_file
+
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as ApexDDP
@@ -301,6 +304,8 @@ parser.add_argument('--log-wandb', action='store_true', default=False,
                     help='log training and validation metrics to wandb')
 
 
+parser.add_argument('--mode', type=str, default='retrain', choices=['super', 'retrain'], help='mode of AutoFormer')
+
 def _parse_args():
     # Do we have a config file to parse?
     args_config, remaining = config_parser.parse_known_args()
@@ -321,6 +326,7 @@ def _parse_args():
 def main():
     setup_default_logging()
     args, args_text = _parse_args()
+    update_config_from_file('/home/hanjing/CHE/AutoFormer/experiments/subnet/Spikformer.yaml')
 
     if args.log_wandb:
         if has_wandb:
@@ -377,6 +383,17 @@ def main():
         depths=args.layer, sr_ratios=1,
         T=args.time_step
     )
+
+    ### Super NAS ###
+    choices = {'num_heads': model_cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': model_cfg.SEARCH_SPACE.MLP_RATIO,
+            'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH}
+    retrain_config = None
+    if args.mode == 'retrain' and "RETRAIN" in model_cfg:
+        retrain_config = {'layer_num': model_cfg.RETRAIN.DEPTH, 'embed_dim': [model_cfg.RETRAIN.EMBED_DIM]*model_cfg.RETRAIN.DEPTH,
+                          'num_heads': model_cfg.RETRAIN.NUM_HEADS,'mlp_ratio': model_cfg.RETRAIN.MLP_RATIO}
+ 
+
+
     print("Creating model")
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"number of params: {n_parameters}")
@@ -609,14 +626,16 @@ def main():
             train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, output_dir=output_dir,
-                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn)
+                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn,
+                choices=choices, mode = args.mode, retrain_config=retrain_config)
 
             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                 if args.local_rank == 0:
                     _logger.info("Distributing BatchNorm running means and vars")
                 distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
 
-            eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
+            eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
+                                   choices=choices, mode = args.mode, retrain_config=retrain_config)
 
             if model_ema is not None and not args.model_ema_force_cpu:
                 if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
@@ -646,11 +665,23 @@ def main():
     if best_metric is not None:
         _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
 
+def sample_configs(choices):
+
+    config = {}
+    dimensions = ['mlp_ratio', 'num_heads']
+    depth = random.choice(choices['depth'])
+    for dimension in dimensions:
+        config[dimension] = [random.choice(choices[dimension]) for _ in range(depth)]
+
+    config['embed_dim'] = [random.choice(choices['embed_dim'])]*depth
+
+    config['layer_num'] = depth
+    return config
 
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, output_dir=None, amp_autocast=suppress,
-        loss_scaler=None, model_ema=None, mixup_fn=None):
+        loss_scaler=None, model_ema=None, mixup_fn=None, choices=None, mode='super', retrain_config=None):
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         if args.prefetcher and loader.mixup_enabled:
             loader.mixup_enabled = False
@@ -664,10 +695,32 @@ def train_one_epoch(
 
     model.train()
 
+    ### Super NAS ###
+    if mode == 'retrain':
+        config = retrain_config
+        model_module = unwrap_model(model)
+        print(config)
+        model_module.set_sample_config(config=config)
+    ### END Super NAS ###
+
     end = time.time()
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
     for batch_idx, (input, target) in enumerate(loader):
+
+        ### Super NAS ###
+        if mode == 'super':
+            config = sample_configs(choices=choices)
+            model_module = unwrap_model(model)
+            model_module.set_sample_config(config=config)
+        elif mode == 'retrain':
+            config = retrain_config
+            model_module = unwrap_model(model)
+            model_module.set_sample_config(config=config)
+        ### END Super NAS ###
+
+
+
         last_batch = batch_idx == last_idx
         data_time_m.update(time.time() - end)
         if not args.prefetcher:
@@ -757,13 +810,24 @@ def train_one_epoch(
     return OrderedDict([('loss', losses_m.avg)])
 
 
-def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix=''):
+def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='', choices=None, mode='super', retrain_config=None):
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
     top5_m = AverageMeter()
 
     model.eval()
+    ### Super NAS ###
+    if mode == 'super':
+        config = sample_configs(choices=choices)
+        model_module = unwrap_model(model)
+        model_module.set_sample_config(config=config)
+    else:
+        config = retrain_config
+        model_module = unwrap_model(model)
+        model_module.set_sample_config(config=config)
+    ### END Super NAS ###
+
 
     end = time.time()
     last_idx = len(loader) - 1

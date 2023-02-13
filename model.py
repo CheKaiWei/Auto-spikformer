@@ -6,6 +6,8 @@ from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg
 import torch.nn.functional as F
 from functools import partial
+from BN_super import BNSuper
+from Linear_super import LinearSuper
 # from sj_dropout import SN_Droppath
 __all__ = ['spikformer']
 
@@ -15,12 +17,16 @@ class MLP(nn.Module):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1_linear = nn.Linear(in_features, hidden_features)
-        self.fc1_bn = nn.BatchNorm1d(hidden_features)
+        # self.fc1_linear = nn.Linear(in_features, hidden_features)
+        # self.fc1_bn = nn.BatchNorm1d(hidden_features)
+        self.fc1_linear = LinearSuper(super_in_dim=in_features, super_out_dim=hidden_features)
+        self.fc1_bn = BNSuper(super_out_dim=hidden_features, dim_1d_2d='1d')
         self.fc1_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
 
-        self.fc2_linear = nn.Linear(hidden_features, out_features)
-        self.fc2_bn = nn.BatchNorm1d(out_features)
+        # self.fc2_linear = nn.Linear(hidden_features, out_features)
+        # self.fc2_bn = nn.BatchNorm1d(out_features)
+        self.fc2_linear = LinearSuper(super_in_dim=hidden_features, super_out_dim=out_features)
+        self.fc2_bn = BNSuper(super_out_dim=out_features, dim_1d_2d='1d')
         self.fc2_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
 
         self.c_hidden = hidden_features
@@ -30,6 +36,7 @@ class MLP(nn.Module):
         T,B,N,C = x.shape
         x_ = x.flatten(0, 1)
         x = self.fc1_linear(x_)
+        self.c_hidden = x.shape[-1]
         x = self.fc1_bn(x.transpose(-1, -2)).transpose(-1, -2).reshape(T, B, N, self.c_hidden).contiguous()
         x = self.fc1_lif(x)
 
@@ -46,22 +53,64 @@ class SSA(nn.Module):
         self.dim = dim
         self.num_heads = num_heads
         self.scale = 0.125
-        self.q_linear = nn.Linear(dim, dim)
-        self.q_bn = nn.BatchNorm1d(dim)
+
+        self.super_embed_dim = dim
+        # self.q_linear = nn.Linear(dim, dim)
+        # self.q_bn = nn.BatchNorm1d(dim)
+        self.q_linear = LinearSuper(self.super_embed_dim, self.super_embed_dim)
+        self.q_bn = BNSuper(super_out_dim=self.super_embed_dim, dim_1d_2d='1d')
         self.q_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
 
-        self.k_linear = nn.Linear(dim, dim)
-        self.k_bn = nn.BatchNorm1d(dim)
+        # self.k_linear = nn.Linear(dim, dim)
+        # self.k_bn = nn.BatchNorm1d(dim)
+        self.k_linear = LinearSuper(self.super_embed_dim, self.super_embed_dim)
+        self.k_bn = BNSuper(super_out_dim=self.super_embed_dim, dim_1d_2d='1d')
         self.k_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
 
-        self.v_linear = nn.Linear(dim, dim)
-        self.v_bn = nn.BatchNorm1d(dim)
+        # self.v_linear = nn.Linear(dim, dim)
+        # self.v_bn = nn.BatchNorm1d(dim)
+        self.v_linear = LinearSuper(self.super_embed_dim, self.super_embed_dim)
+        self.v_bn = BNSuper(super_out_dim=self.super_embed_dim, dim_1d_2d='1d')
         self.v_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
         self.attn_lif = MultiStepLIFNode(tau=2.0, v_threshold=0.5, detach_reset=True, backend='cupy')
 
-        self.proj_linear = nn.Linear(dim, dim)
-        self.proj_bn = nn.BatchNorm1d(dim)
+        # self.proj_linear = nn.Linear(dim, dim)
+        # self.proj_bn = nn.BatchNorm1d(dim)
+        self.proj_linear = LinearSuper(self.super_embed_dim, self.super_embed_dim)
+        self.proj_bn = BNSuper(super_out_dim=self.super_embed_dim, dim_1d_2d='1d')
         self.proj_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
+
+    def set_sample_config(self, sample_q_embed_dim=None, sample_num_heads=None, sample_in_embed_dim=None):
+
+        self.sample_in_embed_dim = sample_in_embed_dim
+        self.sample_num_heads = sample_num_heads
+
+        self.sample_qk_embed_dim = self.sample_in_embed_dim
+
+        # if not self.change_qkv:
+        #     # self.sample_qk_embed_dim = self.super_embed_dim
+        #     self.sample_qk_embed_dim = self.sample_in_embed_dim
+        #     self.sample_scale = (self.sample_in_embed_dim // self.sample_num_heads) ** -0.5
+
+        # else:
+        #     self.sample_qk_embed_dim = sample_q_embed_dim
+        #     self.sample_scale = (self.sample_qk_embed_dim // self.sample_num_heads) ** -0.5
+        # print(sample_in_embed_dim, 3*self.sample_qk_embed_dim)
+        # self.qkv.set_sample_config(sample_in_dim=sample_in_embed_dim, sample_out_dim=3*self.sample_qk_embed_dim)
+        
+        self.q_linear.set_sample_config(sample_in_dim=self.sample_qk_embed_dim, sample_out_dim=self.sample_qk_embed_dim)
+        self.k_linear.set_sample_config(sample_in_dim=self.sample_qk_embed_dim, sample_out_dim=self.sample_qk_embed_dim)
+        self.v_linear.set_sample_config(sample_in_dim=self.sample_qk_embed_dim, sample_out_dim=self.sample_qk_embed_dim)
+        self.proj_linear.set_sample_config(sample_in_dim=self.sample_qk_embed_dim, sample_out_dim=sample_in_embed_dim)
+
+        # if self.relative_position:
+        #     self.rel_pos_embed_k.set_sample_config(self.sample_qk_embed_dim // sample_num_heads)
+        #     self.rel_pos_embed_v.set_sample_config(self.sample_qk_embed_dim // sample_num_heads)
+
+        self.q_bn.set_sample_config(self.sample_qk_embed_dim)
+        self.k_bn.set_sample_config(self.sample_qk_embed_dim)
+        self.v_bn.set_sample_config(self.sample_qk_embed_dim)
+        self.proj_bn.set_sample_config(self.sample_in_embed_dim)
 
     def forward(self, x):
         T,B,N,C = x.shape
@@ -102,6 +151,33 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(in_features=dim, hidden_features=mlp_hidden_dim, drop=drop)
 
+    def set_sample_config(self, is_identity_layer, sample_embed_dim=None, sample_mlp_ratio=None, sample_num_heads=None, sample_dropout=None, sample_attn_dropout=None, sample_out_dim=None):
+
+        if is_identity_layer:
+            self.is_identity_layer = True
+            return
+
+        self.is_identity_layer = False
+
+        self.sample_embed_dim = sample_embed_dim
+        self.sample_out_dim = sample_out_dim
+        self.sample_mlp_ratio = sample_mlp_ratio
+        self.sample_ffn_embed_dim_this_layer = int(sample_embed_dim*sample_mlp_ratio)
+        self.sample_num_heads_this_layer = sample_num_heads
+
+        self.sample_dropout = sample_dropout
+        self.sample_attn_dropout = sample_attn_dropout
+        # self.attn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
+
+        self.attn.set_sample_config(sample_q_embed_dim=self.sample_num_heads_this_layer*64, sample_num_heads=self.sample_num_heads_this_layer, sample_in_embed_dim=self.sample_embed_dim)
+
+        self.mlp.fc1_linear.set_sample_config(sample_in_dim=self.sample_embed_dim, sample_out_dim=self.sample_ffn_embed_dim_this_layer)
+        self.mlp.fc2_linear.set_sample_config(sample_in_dim=self.sample_ffn_embed_dim_this_layer, sample_out_dim=self.sample_out_dim)
+        self.mlp.fc1_bn.set_sample_config(self.sample_ffn_embed_dim_this_layer)
+        self.mlp.fc2_bn.set_sample_config(self.sample_out_dim)
+
+        # self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
+
     def forward(self, x):
         x_attn = self.drop_path(self.attn(x))
         x = x + x_attn
@@ -133,13 +209,24 @@ class SPS(nn.Module):
         self.maxpool2 = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
 
         self.proj_conv3 = nn.Conv2d(embed_dims//2, embed_dims, kernel_size=3, stride=1, padding=1, bias=False)
-        self.proj_bn3 = nn.BatchNorm2d(embed_dims)
+        # self.proj_bn3 = nn.BatchNorm2d(embed_dims)
+        self.proj_bn3 = BNSuper(super_out_dim=embed_dims, dim_1d_2d='2d')
         self.proj_lif3 = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
         self.maxpool3 = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
 
         self.rpe_conv = nn.Conv2d(embed_dims, embed_dims, kernel_size=3, stride=1, padding=1, bias=False)
-        self.rpe_bn = nn.BatchNorm2d(embed_dims)
+        # self.rpe_bn = nn.BatchNorm2d(embed_dims)
+        self.rpe_bn = BNSuper(super_out_dim=embed_dims, dim_1d_2d='2d')
         self.rpe_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
+
+    def set_sample_config(self, sample_embed_dim):
+        self.sample_embed_dim = sample_embed_dim
+        self.sampled_weight = self.proj_conv3.weight[:self.sample_embed_dim, ...]
+        self.sampled_rep_weight = self.rpe_conv.weight[:self.sample_embed_dim, :self.sample_embed_dim, ...]
+
+        self.proj_bn3.set_sample_config(self.sample_embed_dim)
+        self.rpe_bn.set_sample_config(self.sample_embed_dim)
+
 
     def forward(self, x):
         T, B, C, H, W = x.shape
@@ -201,7 +288,9 @@ class Spikformer(nn.Module):
         setattr(self, f"block", block)
 
         # classification head
-        self.head = nn.Linear(embed_dims, num_classes) if num_classes > 0 else nn.Identity()
+        # self.head = nn.Linear(embed_dims, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = LinearSuper(embed_dims, num_classes) if num_classes > 0 else nn.Identity()
+
         self.apply(self._init_weights)
 
     @torch.jit.ignore
@@ -221,6 +310,58 @@ class Spikformer(nn.Module):
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
+
+    def set_sample_config(self, config: dict):
+        block = getattr(self, f"block")
+        patch_embed = getattr(self, f"patch_embed")
+        
+        self.sample_embed_dim = config['embed_dim']
+        self.sample_mlp_ratio = config['mlp_ratio']
+        self.sample_layer_num = config['layer_num']
+        self.sample_num_heads = config['num_heads']
+
+        patch_embed.set_sample_config(self.sample_embed_dim[0])
+        self.sample_output_dim = [out_dim for out_dim in self.sample_embed_dim[1:]] + [self.sample_embed_dim[-1]]
+        for i, blk in enumerate(block):
+            # not exceed sample layer number
+            if i < self.sample_layer_num:
+                # sample_dropout = calc_dropout(self.super_dropout, self.sample_embed_dim[i], self.super_embed_dim)
+                # sample_attn_dropout = calc_dropout(self.super_attn_dropout, self.sample_embed_dim[i], self.super_embed_dim)
+                blk.set_sample_config(is_identity_layer=False,
+                                        sample_embed_dim=self.sample_embed_dim[i],
+                                        sample_mlp_ratio=self.sample_mlp_ratio[i],
+                                        sample_num_heads=self.sample_num_heads[i],
+                                        sample_dropout=0,
+                                        sample_out_dim=self.sample_output_dim[i],
+                                        sample_attn_dropout=0)
+            # exceeds sample layer number
+            else:
+                blk.set_sample_config(is_identity_layer=True)
+        # if self.pre_norm:
+        #     self.norm.set_sample_config(self.sample_embed_dim[-1])
+        self.head.set_sample_config(self.sample_embed_dim[-1], self.num_classes)
+
+        # self.sample_dropout = calc_dropout(self.super_dropout, self.sample_embed_dim[0], self.super_embed_dim)
+        # self.patch_embed_super.set_sample_config(self.sample_embed_dim[0])
+        # self.sample_output_dim = [out_dim for out_dim in self.sample_embed_dim[1:]] + [self.sample_embed_dim[-1]]
+        # for i, blocks in enumerate(self.blocks):
+        #     # not exceed sample layer number
+        #     if i < self.sample_layer_num:
+        #         sample_dropout = calc_dropout(self.super_dropout, self.sample_embed_dim[i], self.super_embed_dim)
+        #         sample_attn_dropout = calc_dropout(self.super_attn_dropout, self.sample_embed_dim[i], self.super_embed_dim)
+        #         blocks.set_sample_config(is_identity_layer=False,
+        #                                 sample_embed_dim=self.sample_embed_dim[i],
+        #                                 sample_mlp_ratio=self.sample_mlp_ratio[i],
+        #                                 sample_num_heads=self.sample_num_heads[i],
+        #                                 sample_dropout=sample_dropout,
+        #                                 sample_out_dim=self.sample_output_dim[i],
+        #                                 sample_attn_dropout=sample_attn_dropout)
+        #     # exceeds sample layer number
+        #     else:
+        #         blocks.set_sample_config(is_identity_layer=True)
+        # if self.pre_norm:
+        #     self.norm.set_sample_config(self.sample_embed_dim[-1])
+        # self.head.set_sample_config(self.sample_embed_dim[-1], self.num_classes)
 
     def forward_features(self, x):
 
