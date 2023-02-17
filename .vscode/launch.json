@@ -1,0 +1,17 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--model_cfg", "experiments/supernet/supernet-Spikformer.yaml", "--resume", "logs/stage1_train_supernet/log_20230215_163857/checkpoint-501.pth.tar", "--min-param-limits","1","--param-limits","100"]
+        }
+    ]
+}

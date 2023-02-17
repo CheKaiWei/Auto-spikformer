@@ -45,6 +45,8 @@ from model_config import model_cfg, update_config_from_file
 import fitlog
 import git
 import random
+from train import validate
+import utils
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as ApexDDP
@@ -310,6 +312,19 @@ parser.add_argument('--mode', type=str, default='retrain', choices=['super', 're
 parser.add_argument('--experiment_description', default='debug')
 parser.add_argument('--model_cfg',help='experiment configure file name',required=True,type=str)
 
+# evolution search parameters
+parser.add_argument('--max-epochs', type=int, default=20)
+parser.add_argument('--select-num', type=int, default=10)
+parser.add_argument('--population-num', type=int, default=50)
+parser.add_argument('--m_prob', type=float, default=0.2)
+parser.add_argument('--s_prob', type=float, default=0.4)
+parser.add_argument('--crossover-num', type=int, default=25)
+# parser.add_argument('--epochs', type=int, default=30)
+parser.add_argument('--mutation-num', type=int, default=25)
+parser.add_argument('--param-limits', type=float, default=23)
+parser.add_argument('--min-param-limits', type=float, default=18)
+
+
 def _parse_args():
     # Do we have a config file to parse?
     args_config, remaining = config_parser.parse_known_args()
@@ -325,6 +340,284 @@ def _parse_args():
     # Cache the args as a text string to save them in the output dir later
     args_text = yaml.safe_dump(args.__dict__, default_flow_style=False)
     return args, args_text
+
+
+
+def decode_cand_tuple(cand_tuple):
+    depth = cand_tuple[0]
+    return depth, list(cand_tuple[1:depth+1]), list(cand_tuple[depth + 1: 2 * depth + 1]), cand_tuple[-1]
+
+class EvolutionSearcher(object):
+
+    def __init__(self, args, device, model, model_without_ddp, choices, val_loader, test_loader, output_dir):
+        self.device = device
+        self.model = model
+        self.model_without_ddp = model_without_ddp
+        self.args = args
+        self.max_epochs = args.max_epochs
+        self.select_num = args.select_num
+        self.population_num = args.population_num
+        self.m_prob = args.m_prob
+        self.crossover_num = args.crossover_num
+        self.mutation_num = args.mutation_num
+        self.parameters_limits = args.param_limits
+        self.min_parameters_limits = args.min_param_limits
+        self.val_loader = val_loader
+        self.test_loader = test_loader
+        self.output_dir = output_dir
+        self.s_prob =args.s_prob
+        self.memory = []
+        self.vis_dict = {}
+        self.keep_top_k = {self.select_num: [], 50: []}
+        self.epoch = 0
+        self.checkpoint_path = args.resume
+        self.candidates = []
+        self.top_accuracies = []
+        self.cand_params = []
+        self.choices = choices
+
+    def save_checkpoint(self):
+
+        info = {}
+        info['top_accuracies'] = self.top_accuracies
+        info['memory'] = self.memory
+        info['candidates'] = self.candidates
+        info['vis_dict'] = self.vis_dict
+        info['keep_top_k'] = self.keep_top_k
+        info['epoch'] = self.epoch
+        checkpoint_path = os.path.join(self.output_dir, "checkpoint-{}.pth.tar".format(self.epoch))
+        torch.save(info, checkpoint_path)
+        print('save checkpoint to', checkpoint_path)
+
+    def load_checkpoint(self):
+        if not os.path.exists(self.checkpoint_path):
+            return False
+        info = torch.load(self.checkpoint_path)
+        self.memory = info['memory']
+        self.candidates = info['candidates']
+        self.vis_dict = info['vis_dict']
+        self.keep_top_k = info['keep_top_k']
+        self.epoch = info['epoch']
+
+        print('load checkpoint from', self.checkpoint_path)
+        return True
+
+    def is_legal(self, cand):
+        assert isinstance(cand, tuple)
+        if cand not in self.vis_dict:
+            self.vis_dict[cand] = {}
+        info = self.vis_dict[cand]
+        if 'visited' in info:
+            return False
+        depth, mlp_ratio, num_heads, embed_dim = decode_cand_tuple(cand)
+        sampled_config = {}
+        sampled_config['layer_num'] = depth
+        sampled_config['mlp_ratio'] = mlp_ratio
+        sampled_config['num_heads'] = num_heads
+        sampled_config['embed_dim'] = [embed_dim]*depth
+        # n_parameters = self.model_without_ddp.get_sampled_params_numel(sampled_config)
+        # n_parameters = 20
+        # info['params'] =  n_parameters / 10.**6
+        info['params'] = 20
+
+        if info['params'] > self.parameters_limits:
+            print('parameters limit exceed')
+            return False
+
+        if info['params'] < self.min_parameters_limits:
+            print('under minimum parameters limit')
+            return False
+
+        print("rank:", utils.get_rank(), cand, info['params'])
+        # eval_stats = validate(self.val_loader, self.model, self.device, mode='retrain', retrain_config=sampled_config)
+        # test_stats = validate(self.test_loader, self.model, self.device, mode='retrain', retrain_config=sampled_config)
+        validate_loss_fn = nn.CrossEntropyLoss().cuda()
+        eval_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress,
+                                choices=self.choices, mode = 'retrain', retrain_config=sampled_config)
+        test_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress,
+                                choices=self.choices, mode = 'retrain', retrain_config=sampled_config)
+
+        info['acc'] = eval_stats['top1']
+        info['test_acc'] = test_stats['top1']
+
+        info['visited'] = True
+
+        return True
+
+    def update_top_k(self, candidates, *, k, key, reverse=True):
+        assert k in self.keep_top_k
+        print('select ......')
+        t = self.keep_top_k[k]
+        t += candidates
+        t.sort(key=key, reverse=reverse)
+        self.keep_top_k[k] = t[:k]
+
+    def stack_random_cand(self, random_func, *, batchsize=10):
+        while True:
+            cands = [random_func() for _ in range(batchsize)]
+            for cand in cands:
+                if cand not in self.vis_dict:
+                    self.vis_dict[cand] = {}
+                info = self.vis_dict[cand]
+            for cand in cands:
+                yield cand
+
+    def get_random_cand(self):
+
+        cand_tuple = list()
+        dimensions = ['mlp_ratio', 'num_heads']
+        depth = random.choice(self.choices['depth'])
+        cand_tuple.append(depth)
+        for dimension in dimensions:
+            for i in range(depth):
+                cand_tuple.append(random.choice(self.choices[dimension]))
+
+        cand_tuple.append(random.choice(self.choices['embed_dim']))
+        return tuple(cand_tuple)
+
+    def get_random(self, num):
+        print('random select ........')
+        cand_iter = self.stack_random_cand(self.get_random_cand)
+        while len(self.candidates) < num:
+            cand = next(cand_iter)
+            if not self.is_legal(cand):
+                continue
+            self.candidates.append(cand)
+            print('random {}/{}'.format(len(self.candidates), num))
+        print('random_num = {}'.format(len(self.candidates)))
+
+    def get_mutation(self, k, mutation_num, m_prob, s_prob):
+        assert k in self.keep_top_k
+        print('mutation ......')
+        res = []
+        iter = 0
+        max_iters = mutation_num * 10
+
+        def random_func():
+            cand = list(random.choice(self.keep_top_k[k]))
+            depth, mlp_ratio, num_heads, embed_dim = decode_cand_tuple(cand)
+            random_s = random.random()
+
+            # depth
+            if random_s < s_prob:
+                new_depth = random.choice(self.choices['depth'])
+
+                if new_depth > depth:
+                    mlp_ratio = mlp_ratio + [random.choice(self.choices['mlp_ratio']) for _ in range(new_depth - depth)]
+                    num_heads = num_heads + [random.choice(self.choices['num_heads']) for _ in range(new_depth - depth)]
+                else:
+                    mlp_ratio = mlp_ratio[:new_depth]
+                    num_heads = num_heads[:new_depth]
+
+                depth = new_depth
+            # mlp_ratio
+            for i in range(depth):
+                random_s = random.random()
+                if random_s < m_prob:
+                    mlp_ratio[i] = random.choice(self.choices['mlp_ratio'])
+
+            # num_heads
+
+            for i in range(depth):
+                random_s = random.random()
+                if random_s < m_prob:
+                    num_heads[i] = random.choice(self.choices['num_heads'])
+
+            # embed_dim
+            random_s = random.random()
+            if random_s < s_prob:
+                embed_dim = random.choice(self.choices['embed_dim'])
+
+            result_cand = [depth] + mlp_ratio + num_heads + [embed_dim]
+
+            return tuple(result_cand)
+
+        cand_iter = self.stack_random_cand(random_func)
+        while len(res) < mutation_num and max_iters > 0:
+            max_iters -= 1
+            cand = next(cand_iter)
+            if not self.is_legal(cand):
+                continue
+            res.append(cand)
+            print('mutation {}/{}'.format(len(res), mutation_num))
+
+        print('mutation_num = {}'.format(len(res)))
+        return res
+
+    def get_crossover(self, k, crossover_num):
+        assert k in self.keep_top_k
+        print('crossover ......')
+        res = []
+        iter = 0
+        max_iters = 10 * crossover_num
+
+        def random_func():
+
+            p1 = random.choice(self.keep_top_k[k])
+            p2 = random.choice(self.keep_top_k[k])
+            max_iters_tmp = 50
+            while len(p1) != len(p2) and max_iters_tmp > 0:
+                max_iters_tmp -= 1
+                p1 = random.choice(self.keep_top_k[k])
+                p2 = random.choice(self.keep_top_k[k])
+            return tuple(random.choice([i, j]) for i, j in zip(p1, p2))
+
+        cand_iter = self.stack_random_cand(random_func)
+        while len(res) < crossover_num and max_iters > 0:
+            max_iters -= 1
+            cand = next(cand_iter)
+            if not self.is_legal(cand):
+                continue
+            res.append(cand)
+            print('crossover {}/{}'.format(len(res), crossover_num))
+
+        print('crossover_num = {}'.format(len(res)))
+        return res
+
+    def search(self):
+        print(
+            'population_num = {} select_num = {} mutation_num = {} crossover_num = {} random_num = {} max_epochs = {}'.format(
+                self.population_num, self.select_num, self.mutation_num, self.crossover_num,
+                self.population_num - self.mutation_num - self.crossover_num, self.max_epochs))
+
+        # self.load_checkpoint()
+
+        self.get_random(self.population_num)
+
+        while self.epoch < self.max_epochs:
+            print('epoch = {}'.format(self.epoch))
+
+            self.memory.append([])
+            for cand in self.candidates:
+                self.memory[-1].append(cand)
+
+            self.update_top_k(
+                self.candidates, k=self.select_num, key=lambda x: self.vis_dict[x]['acc'])
+            self.update_top_k(
+                self.candidates, k=50, key=lambda x: self.vis_dict[x]['acc'])
+
+            print('epoch = {} : top {} result'.format(
+                self.epoch, len(self.keep_top_k[50])))
+            tmp_accuracy = []
+            for i, cand in enumerate(self.keep_top_k[50]):
+                print('No.{} {} Top-1 val acc = {}, Top-1 test acc = {}, params = {}'.format(
+                    i + 1, cand, self.vis_dict[cand]['acc'], self.vis_dict[cand]['test_acc'], self.vis_dict[cand]['params']))
+                tmp_accuracy.append(self.vis_dict[cand]['acc'])
+            self.top_accuracies.append(tmp_accuracy)
+
+            mutation = self.get_mutation(
+                self.select_num, self.mutation_num, self.m_prob, self.s_prob)
+            crossover = self.get_crossover(self.select_num, self.crossover_num)
+
+            self.candidates = mutation + crossover
+
+            self.get_random(self.population_num)
+
+            self.epoch += 1
+
+            self.save_checkpoint()
+
+
 
 
 def main():
@@ -343,12 +636,7 @@ def main():
         args.output_dir = 'debug'
     else:
         fitlog.commit(__file__,fit_msg=args.experiment_description)
-        if args.mode == 'retrain':
-            log_path = "logs/stage3_retrain"
-        elif args.mode == 'super':
-            log_path = "logs/stage1_train_supernet"
-        else:
-            log_path = 'debug'
+        log_path = "logs/stage2_search"
         if not os.path.isdir(log_path):
             os.mkdir(log_path)
         fitlog.set_log_dir(log_path)
@@ -423,11 +711,6 @@ def main():
     ### Super NAS ###
     choices = {'num_heads': model_cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': model_cfg.SEARCH_SPACE.MLP_RATIO,
             'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH}
-    retrain_config = None
-    if args.mode == 'retrain' and "RETRAIN" in model_cfg:
-        retrain_config = {'layer_num': model_cfg.RETRAIN.DEPTH, 'embed_dim': [model_cfg.RETRAIN.EMBED_DIM]*model_cfg.RETRAIN.DEPTH,
-                          'num_heads': model_cfg.RETRAIN.NUM_HEADS,'mlp_ratio': model_cfg.RETRAIN.MLP_RATIO}
- 
 
 
     print("Creating model")
@@ -654,55 +937,65 @@ def main():
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing, max_history=args.checkpoint_hist)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
+    
+    device = torch.device(args.device)
+    model_without_ddp = model
+    t = time.time()
+    searcher = EvolutionSearcher(args, device, model, model_without_ddp, choices, loader_eval, loader_eval, args.output_dir)
 
-    try:
-        for epoch in range(start_epoch, num_epochs):
-            if args.distributed and hasattr(loader_train.sampler, 'set_epoch'):
-                loader_train.sampler.set_epoch(epoch)
+    searcher.search()
 
-            train_metrics = train_one_epoch(
-                epoch, model, loader_train, optimizer, train_loss_fn, args,
-                lr_scheduler=lr_scheduler, saver=saver, output_dir=output_dir,
-                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn,
-                choices=choices, mode = args.mode, retrain_config=retrain_config)
+    print('total searching time = {:.2f} hours'.format(
+        (time.time() - t) / 3600))
 
-            if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
-                if args.local_rank == 0:
-                    _logger.info("Distributing BatchNorm running means and vars")
-                distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
+    # try:
+    #     for epoch in range(start_epoch, num_epochs):
+    #         if args.distributed and hasattr(loader_train.sampler, 'set_epoch'):
+    #             loader_train.sampler.set_epoch(epoch)
 
-            eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
-                                   choices=choices, mode = args.mode, retrain_config=retrain_config)
+    #         train_metrics = train_one_epoch(
+    #             epoch, model, loader_train, optimizer, train_loss_fn, args,
+    #             lr_scheduler=lr_scheduler, saver=saver, output_dir=output_dir,
+    #             amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn,
+    #             choices=choices, mode = args.mode, retrain_config=retrain_config)
 
-            if model_ema is not None and not args.model_ema_force_cpu:
-                if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
-                    distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
-                ema_eval_metrics = validate(
-                    model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
-                    log_suffix=' (EMA)')
-                eval_metrics = ema_eval_metrics
+    #         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
+    #             if args.local_rank == 0:
+    #                 _logger.info("Distributing BatchNorm running means and vars")
+    #             distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
 
-            if lr_scheduler is not None:
-                # step LR for next epoch
-                lr_scheduler.step(epoch + 1, eval_metrics[eval_metric])
-            # print(eval_metrics.keys())
-            fitlog.add_metric(eval_metrics["top1"],epoch,'eval_top1')
-            fitlog.add_best_metric({"eval_top1":best_metric})
-            if output_dir is not None:
-                update_summary(
-                    epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
-                    write_header=best_metric is None, log_wandb=args.log_wandb and has_wandb)
+    #         eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
+    #                                choices=choices, mode = args.mode, retrain_config=retrain_config)
 
-            if saver is not None:
-                # save proper checkpoint with eval metric
-                save_metric = eval_metrics[eval_metric]
-                best_metric, best_epoch = saver.save_checkpoint(epoch, metric=save_metric)
-                _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
+    #         if model_ema is not None and not args.model_ema_force_cpu:
+    #             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
+    #                 distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
+    #             ema_eval_metrics = validate(
+    #                 model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
+    #                 log_suffix=' (EMA)')
+    #             eval_metrics = ema_eval_metrics
 
-    except KeyboardInterrupt:
-        pass
-    if best_metric is not None:
-        _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
+    #         if lr_scheduler is not None:
+    #             # step LR for next epoch
+    #             lr_scheduler.step(epoch + 1, eval_metrics[eval_metric])
+    #         # print(eval_metrics.keys())
+    #         fitlog.add_metric(eval_metrics["top1"],epoch,'eval_top1')
+    #         fitlog.add_best_metric({"eval_top1":best_metric})
+    #         if output_dir is not None:
+    #             update_summary(
+    #                 epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
+    #                 write_header=best_metric is None, log_wandb=args.log_wandb and has_wandb)
+
+    #         if saver is not None:
+    #             # save proper checkpoint with eval metric
+    #             save_metric = eval_metrics[eval_metric]
+    #             best_metric, best_epoch = saver.save_checkpoint(epoch, metric=save_metric)
+    #             _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
+
+    # except KeyboardInterrupt:
+    #     pass
+    # if best_metric is not None:
+    #     _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
 
 def sample_configs(choices):
 
@@ -851,6 +1144,7 @@ def train_one_epoch(
 
 def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='', choices=None, mode='super', retrain_config=None):
     print('------------------------------------------')
+
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
@@ -861,12 +1155,12 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='',
     if mode == 'super':
         config = sample_configs(choices=choices)
         model_module = unwrap_model(model)
-        print('bug!')
+        # print('bug!')
         model_module.set_sample_config(config=config)
     else:
         config = retrain_config
         model_module = unwrap_model(model)
-        print('successfully set sample config!!!!!!!!!!!!!!!')
+        # print('successfully set sample config!!!!!!!!!!!!!!!')
         model_module.set_sample_config(config=config)
     ### END Super NAS ###
 

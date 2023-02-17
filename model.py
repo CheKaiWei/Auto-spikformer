@@ -81,7 +81,7 @@ class SSA(nn.Module):
         self.proj_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
 
     def set_sample_config(self, sample_q_embed_dim=None, sample_num_heads=None, sample_in_embed_dim=None):
-
+        print('setting !!!!!!!!!!!!!!!')
         self.sample_in_embed_dim = sample_in_embed_dim
         self.sample_num_heads = sample_num_heads
 
@@ -179,6 +179,8 @@ class Block(nn.Module):
         # self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
 
     def forward(self, x):
+        if self.is_identity_layer:
+            return x
         x_attn = self.attn(x)
         x = x + x_attn
         x = x + self.mlp(x)
@@ -316,7 +318,7 @@ class Spikformer(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def set_sample_config(self, config: dict):
-        # print(config)
+        print(config)
         block = getattr(self, f"block")
         patch_embed = getattr(self, f"patch_embed")
         
