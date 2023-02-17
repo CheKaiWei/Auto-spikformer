@@ -42,7 +42,9 @@ from timm.utils import ApexScaler, NativeScaler
 import model
 from timm.utils.model import unwrap_model
 from model_config import model_cfg, update_config_from_file
-
+import fitlog
+import git
+import random
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as ApexDDP
@@ -305,6 +307,8 @@ parser.add_argument('--log-wandb', action='store_true', default=False,
 
 
 parser.add_argument('--mode', type=str, default='retrain', choices=['super', 'retrain'], help='mode of AutoFormer')
+parser.add_argument('--experiment_description', default='debug')
+parser.add_argument('--model_cfg',help='experiment configure file name',required=True,type=str)
 
 def _parse_args():
     # Do we have a config file to parse?
@@ -326,7 +330,39 @@ def _parse_args():
 def main():
     setup_default_logging()
     args, args_text = _parse_args()
-    update_config_from_file('/home/hanjing/CHE/AutoFormer/experiments/subnet/Spikformer.yaml')
+
+
+    ### FITLOG ###
+    fitlog_debug = False
+    repo = git.Repo(search_parent_directories=True)
+    git_branch = repo.head.reference.path.split('/')[-1]
+    git_msg = repo.head.object.summary
+    git_commit_id = repo.head.object.hexsha[:10]
+    if fitlog_debug:
+        fitlog.debug()
+        args.output_dir = 'debug'
+    else:
+        fitlog.commit(__file__,fit_msg=args.experiment_description)
+        if args.mode == 'retrain':
+            log_path = "logs/stage3_retrain"
+        elif args.mode == 'super':
+            log_path = "logs/stage1_train_supernet"
+        else:
+            log_path = 'debug'
+        if not os.path.isdir(log_path):
+            os.mkdir(log_path)
+        fitlog.set_log_dir(log_path)
+        fitlog.create_log_folder()
+        fitlog.add_hyper(args)
+        args.output_dir = os.path.join(log_path,fitlog.get_log_folder())
+    
+        fitlog.add_other(name='git_branch',value=git_branch)
+        fitlog.add_other(name='git_msg',value=git_msg)
+        fitlog.add_other(name='git_commit_id',value=git_commit_id)
+        ### FITLOG ###
+
+
+    update_config_from_file(args.model_cfg)
 
     if args.log_wandb:
         if has_wandb:
@@ -479,7 +515,7 @@ def main():
         if args.resume:
             load_checkpoint(model_ema.module, args.resume, use_ema=True)
 
-    # setup distributed training
+
     # setup distributed training
     if args.distributed:
         if has_apex and use_amp != 'native':
@@ -507,7 +543,7 @@ def main():
     if args.local_rank == 0:
         _logger.info('Scheduled epochs: {}'.format(num_epochs))
 
-    print('!!!',args.data_dir)
+    # print('!!!',args.data_dir)
     # create the train and eval datasets
     dataset_train = create_dataset(
         args.dataset,
@@ -610,7 +646,8 @@ def main():
                 safe_model_name(args.model),
                 str(data_config['input_size'][-1])
             ])
-        output_dir = get_outdir(args.output if args.output else './output/train', exp_name)
+        # output_dir = get_outdir(args.output if args.output else './output/train', exp_name)
+        output_dir = args.output_dir
         decreasing = True if eval_metric == 'loss' else False
         saver = CheckpointSaver(
             model=model, optimizer=optimizer, args=args, model_ema=model_ema, amp_scaler=loss_scaler,
@@ -648,7 +685,9 @@ def main():
             if lr_scheduler is not None:
                 # step LR for next epoch
                 lr_scheduler.step(epoch + 1, eval_metrics[eval_metric])
-
+            # print(eval_metrics.keys())
+            fitlog.add_metric(eval_metrics["top1"],epoch,'eval_top1')
+            fitlog.add_best_metric({"eval_top1":best_metric})
             if output_dir is not None:
                 update_summary(
                     epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
@@ -707,7 +746,7 @@ def train_one_epoch(
     last_idx = len(loader) - 1
     num_updates = epoch * len(loader)
     for batch_idx, (input, target) in enumerate(loader):
-
+        # break
         ### Super NAS ###
         if mode == 'super':
             config = sample_configs(choices=choices)

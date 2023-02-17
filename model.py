@@ -223,7 +223,7 @@ class SPS(nn.Module):
         self.sample_embed_dim = sample_embed_dim
         self.sampled_weight = self.proj_conv3.weight[:self.sample_embed_dim, ...]
         self.sampled_rep_weight = self.rpe_conv.weight[:self.sample_embed_dim, :self.sample_embed_dim, ...]
-
+        # print('!!',self.sample_embed_dim)
         self.proj_bn3.set_sample_config(self.sample_embed_dim)
         self.rpe_bn.set_sample_config(self.sample_embed_dim)
 
@@ -243,13 +243,17 @@ class SPS(nn.Module):
         x = self.proj_lif2(x).flatten(0, 1).contiguous()
         x = self.maxpool2(x)
 
-        x = self.proj_conv3(x)
+        # print('input3',x.shape)
+        # x = self.proj_conv3(x)
+        x = F.conv2d(x, self.sampled_weight, stride=self.proj_conv3.stride, padding=self.proj_conv3.padding)
+        # print('output3',x.shape)
         x = self.proj_bn3(x).reshape(T, B, -1, H//2, W//2).contiguous()
         x = self.proj_lif3(x).flatten(0, 1).contiguous()
         x = self.maxpool3(x)
 
         x_feat = x.reshape(T, B, -1, H//4, W//4).contiguous()
-        x = self.rpe_conv(x)
+        # x = self.rpe_conv(x)
+        x = F.conv2d(x, self.sampled_rep_weight, stride=self.rpe_conv.stride, padding=self.rpe_conv.padding)
         x = self.rpe_bn(x).reshape(T, B, -1, H//4, W//4).contiguous()
         x = self.rpe_lif(x)
         x = x + x_feat
@@ -312,6 +316,7 @@ class Spikformer(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def set_sample_config(self, config: dict):
+        # print(config)
         block = getattr(self, f"block")
         patch_embed = getattr(self, f"patch_embed")
         
@@ -376,6 +381,7 @@ class Spikformer(nn.Module):
     def forward(self, x):
         x = (x.unsqueeze(0)).repeat(self.T, 1, 1, 1, 1)
         x = self.forward_features(x)
+        # print(x.shape)
         x = self.head(x.mean(0))
         return x
 
