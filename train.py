@@ -497,6 +497,9 @@ def main():
         if args.local_rank == 0:
             _logger.info('AMP not enabled. Training in float32.')
 
+    checkpoint_weight = torch.load('logs/stage1_train_supernet/log_20230217_133001/checkpoint-1001.pth.tar')
+    model.load_state_dict(checkpoint_weight['state_dict'])
+
     # optionally resume from a checkpoint
     resume_epoch = None
     if args.resume:

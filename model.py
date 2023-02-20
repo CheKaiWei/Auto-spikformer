@@ -318,7 +318,7 @@ class Spikformer(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def set_sample_config(self, config: dict):
-        print(config)
+        # print(config)
         block = getattr(self, f"block")
         patch_embed = getattr(self, f"patch_embed")
         
