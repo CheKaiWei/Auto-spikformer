@@ -432,7 +432,7 @@ class EvolutionSearcher(object):
         # eval_stats = validate(self.val_loader, self.model, self.device, mode='retrain', retrain_config=sampled_config)
         # test_stats = validate(self.test_loader, self.model, self.device, mode='retrain', retrain_config=sampled_config)
         validate_loss_fn = nn.CrossEntropyLoss().cuda()
-        eval_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress,
+        eval_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress, ## TODO check eval_stats
                                 choices=self.choices, mode = 'retrain', retrain_config=sampled_config)
         test_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress,
                                 choices=self.choices, mode = 'retrain', retrain_config=sampled_config)
@@ -948,54 +948,6 @@ def main():
     print('total searching time = {:.2f} hours'.format(
         (time.time() - t) / 3600))
 
-    # try:
-    #     for epoch in range(start_epoch, num_epochs):
-    #         if args.distributed and hasattr(loader_train.sampler, 'set_epoch'):
-    #             loader_train.sampler.set_epoch(epoch)
-
-    #         train_metrics = train_one_epoch(
-    #             epoch, model, loader_train, optimizer, train_loss_fn, args,
-    #             lr_scheduler=lr_scheduler, saver=saver, output_dir=output_dir,
-    #             amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn,
-    #             choices=choices, mode = args.mode, retrain_config=retrain_config)
-
-    #         if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
-    #             if args.local_rank == 0:
-    #                 _logger.info("Distributing BatchNorm running means and vars")
-    #             distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
-
-    #         eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
-    #                                choices=choices, mode = args.mode, retrain_config=retrain_config)
-
-    #         if model_ema is not None and not args.model_ema_force_cpu:
-    #             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
-    #                 distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
-    #             ema_eval_metrics = validate(
-    #                 model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast,
-    #                 log_suffix=' (EMA)')
-    #             eval_metrics = ema_eval_metrics
-
-    #         if lr_scheduler is not None:
-    #             # step LR for next epoch
-    #             lr_scheduler.step(epoch + 1, eval_metrics[eval_metric])
-    #         # print(eval_metrics.keys())
-    #         fitlog.add_metric(eval_metrics["top1"],epoch,'eval_top1')
-    #         fitlog.add_best_metric({"eval_top1":best_metric})
-    #         if output_dir is not None:
-    #             update_summary(
-    #                 epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
-    #                 write_header=best_metric is None, log_wandb=args.log_wandb and has_wandb)
-
-    #         if saver is not None:
-    #             # save proper checkpoint with eval metric
-    #             save_metric = eval_metrics[eval_metric]
-    #             best_metric, best_epoch = saver.save_checkpoint(epoch, metric=save_metric)
-    #             _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
-
-    # except KeyboardInterrupt:
-    #     pass
-    # if best_metric is not None:
-    #     _logger.info('*** Best metric: {0} (epoch {1})'.format(best_metric, best_epoch))
 
 def sample_configs(choices):
 
@@ -1142,85 +1094,6 @@ def train_one_epoch(
     return OrderedDict([('loss', losses_m.avg)])
 
 
-def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='', choices=None, mode='super', retrain_config=None):
-    print('------------------------------------------')
-
-    batch_time_m = AverageMeter()
-    losses_m = AverageMeter()
-    top1_m = AverageMeter()
-    top5_m = AverageMeter()
-
-    model.eval()
-    ### Super NAS ###
-    if mode == 'super':
-        config = sample_configs(choices=choices)
-        model_module = unwrap_model(model)
-        # print('bug!')
-        model_module.set_sample_config(config=config)
-    else:
-        config = retrain_config
-        model_module = unwrap_model(model)
-        # print('successfully set sample config!!!!!!!!!!!!!!!')
-        model_module.set_sample_config(config=config)
-    ### END Super NAS ###
-
-
-    end = time.time()
-    last_idx = len(loader) - 1
-    with torch.no_grad():
-        for batch_idx, (input, target) in enumerate(loader):
-            last_batch = batch_idx == last_idx
-            if not args.prefetcher:
-                input = input.cuda()
-                target = target.cuda()
-            if args.channels_last:
-                input = input.contiguous(memory_format=torch.channels_last)
-
-            with amp_autocast():
-                output = model(input)
-            if isinstance(output, (tuple, list)):
-                output = output[0]
-
-            # augmentation reduction
-            reduce_factor = args.tta
-            if reduce_factor > 1:
-                output = output.unfold(0, reduce_factor, reduce_factor).mean(dim=2)
-                target = target[0:target.size(0):reduce_factor]
-
-            loss = loss_fn(output, target)
-            functional.reset_net(model)
-
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
-
-            if args.distributed:
-                reduced_loss = reduce_tensor(loss.data, args.world_size)
-                acc1 = reduce_tensor(acc1, args.world_size)
-                acc5 = reduce_tensor(acc5, args.world_size)
-            else:
-                reduced_loss = loss.data
-
-            torch.cuda.synchronize()
-
-            losses_m.update(reduced_loss.item(), input.size(0))
-            top1_m.update(acc1.item(), output.size(0))
-            top5_m.update(acc5.item(), output.size(0))
-
-            batch_time_m.update(time.time() - end)
-            end = time.time()
-            if args.local_rank == 0 and (last_batch or batch_idx % args.log_interval == 0):
-                log_name = 'Test' + log_suffix
-                _logger.info(
-                    '{0}: [{1:>4d}/{2}]  '
-                    'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})  '
-                    'Loss: {loss.val:>7.4f} ({loss.avg:>6.4f})  '
-                    'Acc@1: {top1.val:>7.4f} ({top1.avg:>7.4f})  '
-                    'Acc@5: {top5.val:>7.4f} ({top5.avg:>7.4f})'.format(
-                        log_name, batch_idx, last_idx, batch_time=batch_time_m,
-                        loss=losses_m, top1=top1_m, top5=top5_m))
-
-    metrics = OrderedDict([('loss', losses_m.avg), ('top1', top1_m.avg), ('top5', top5_m.avg)])
-
-    return metrics
 
 
 if __name__ == '__main__':

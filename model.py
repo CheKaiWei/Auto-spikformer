@@ -81,7 +81,7 @@ class SSA(nn.Module):
         self.proj_lif = MultiStepLIFNode(tau=2.0, detach_reset=True, backend='cupy')
 
     def set_sample_config(self, sample_q_embed_dim=None, sample_num_heads=None, sample_in_embed_dim=None):
-        print('setting !!!!!!!!!!!!!!!')
+        # print('setting !!!!!!!!!!!!!!!')
         self.sample_in_embed_dim = sample_in_embed_dim
         self.sample_num_heads = sample_num_heads
 
