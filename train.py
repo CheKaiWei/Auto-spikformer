@@ -497,8 +497,8 @@ def main():
         if args.local_rank == 0:
             _logger.info('AMP not enabled. Training in float32.')
 
-    checkpoint_weight = torch.load('logs/stage1_train_supernet/log_20230217_133001/checkpoint-1001.pth.tar')
-    model.load_state_dict(checkpoint_weight['state_dict'])
+    # checkpoint_weight = torch.load('logs/stage1_train_supernet/log_20230217_133001/checkpoint-1001.pth.tar')
+    # model.load_state_dict(checkpoint_weight['state_dict'])
 
     # optionally resume from a checkpoint
     resume_epoch = None
@@ -864,12 +864,12 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='',
     if mode == 'super':
         config = sample_configs(choices=choices)
         model_module = unwrap_model(model)
-        print('bug!')
+        # print('bug!')
         model_module.set_sample_config(config=config)
     else:
         config = retrain_config
         model_module = unwrap_model(model)
-        print('successfully set sample config!!!!!!!!!!!!!!!')
+        # print('successfully set sample config!!!!!!!!!!!!!!!')
         model_module.set_sample_config(config=config)
     ### END Super NAS ###
 
