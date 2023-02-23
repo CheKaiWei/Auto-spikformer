@@ -45,6 +45,8 @@ from model_config import model_cfg, update_config_from_file
 import fitlog
 import git
 import random
+import numpy as np
+import torch.backends.cudnn as cudnn
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as ApexDDP
@@ -406,7 +408,15 @@ def main():
         _logger.warning("Neither APEX or native Torch AMP is available, using float32. "
                         "Install NVIDA apex or upgrade to PyTorch 1.6")
 
+    # Set random seed for reproducibility
     random_seed(args.seed, args.rank)
+    np.random.seed(args.seed)
+    cudnn.benchmark = True
+    torch.manual_seed(args.seed)
+    cudnn.enabled=True
+    torch.cuda.manual_seed(args.seed)
+
+    print(args)
     model = create_model(
         'spikformer',
         pretrained=False,
