@@ -335,7 +335,7 @@ def main():
 
 
     ### FITLOG ###
-    fitlog_debug = False
+    fitlog_debug = True
     repo = git.Repo(search_parent_directories=True)
     git_branch = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
@@ -433,12 +433,12 @@ def main():
     ### Super NAS ###
     choices = {'num_heads': model_cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': model_cfg.SEARCH_SPACE.MLP_RATIO,
             'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH,
-            'time_step':model_cfg.SEARCH_SPACE.TIME_STEP}
+            'time_step':model_cfg.SEARCH_SPACE.TIME_STEP, 'threshold':model_cfg.SEARCH_SPACE.THRESHOLD}
     retrain_config = None
     if args.mode == 'retrain' and "RETRAIN" in model_cfg:
         retrain_config = {'layer_num': model_cfg.RETRAIN.DEPTH, 'embed_dim': [model_cfg.RETRAIN.EMBED_DIM]*model_cfg.RETRAIN.DEPTH,
                           'num_heads': model_cfg.RETRAIN.NUM_HEADS,'mlp_ratio': model_cfg.RETRAIN.MLP_RATIO,
-                          'time_step':model_cfg.RETRAIN.TIME_STEP}
+                          'time_step':model_cfg.RETRAIN.TIME_STEP, 'threshold':model_cfg.RETRAIN.THRESHOLD}
  
 
 
@@ -722,7 +722,7 @@ def main():
 def sample_configs(choices):
 
     config = {}
-    dimensions = ['mlp_ratio', 'num_heads']
+    dimensions = ['mlp_ratio', 'num_heads', 'threshold']
     depth = random.choice(choices['depth'])
     time_step = random.choice(choices['time_step'])
     for dimension in dimensions:
