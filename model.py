@@ -326,6 +326,7 @@ class Spikformer(nn.Module):
         self.sample_mlp_ratio = config['mlp_ratio']
         self.sample_layer_num = config['layer_num']
         self.sample_num_heads = config['num_heads']
+        self.T = config['time_step']
 
         patch_embed.set_sample_config(self.sample_embed_dim[0])
         self.sample_output_dim = [out_dim for out_dim in self.sample_embed_dim[1:]] + [self.sample_embed_dim[-1]]
@@ -381,6 +382,7 @@ class Spikformer(nn.Module):
         return x.mean(2)
 
     def forward(self, x):
+        # print('time step:',self.T)
         x = (x.unsqueeze(0)).repeat(self.T, 1, 1, 1, 1)
         x = self.forward_features(x)
         # print(x.shape)

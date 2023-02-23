@@ -432,11 +432,13 @@ def main():
 
     ### Super NAS ###
     choices = {'num_heads': model_cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': model_cfg.SEARCH_SPACE.MLP_RATIO,
-            'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH}
+            'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH,
+            'time_step':model_cfg.SEARCH_SPACE.TIME_STEP}
     retrain_config = None
     if args.mode == 'retrain' and "RETRAIN" in model_cfg:
         retrain_config = {'layer_num': model_cfg.RETRAIN.DEPTH, 'embed_dim': [model_cfg.RETRAIN.EMBED_DIM]*model_cfg.RETRAIN.DEPTH,
-                          'num_heads': model_cfg.RETRAIN.NUM_HEADS,'mlp_ratio': model_cfg.RETRAIN.MLP_RATIO}
+                          'num_heads': model_cfg.RETRAIN.NUM_HEADS,'mlp_ratio': model_cfg.RETRAIN.MLP_RATIO,
+                          'time_step':model_cfg.RETRAIN.TIME_STEP}
  
 
 
@@ -722,12 +724,14 @@ def sample_configs(choices):
     config = {}
     dimensions = ['mlp_ratio', 'num_heads']
     depth = random.choice(choices['depth'])
+    time_step = random.choice(choices['time_step'])
     for dimension in dimensions:
         config[dimension] = [random.choice(choices[dimension]) for _ in range(depth)]
 
     config['embed_dim'] = [random.choice(choices['embed_dim'])]*depth
 
     config['layer_num'] = depth
+    config['time_step'] = time_step
     return config
 
 def train_one_epoch(
