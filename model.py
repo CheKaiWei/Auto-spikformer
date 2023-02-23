@@ -151,7 +151,8 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(in_features=dim, hidden_features=mlp_hidden_dim, drop=drop)
 
-    def set_sample_config(self, is_identity_layer, sample_embed_dim=None, sample_mlp_ratio=None, sample_num_heads=None, sample_dropout=None, sample_attn_dropout=None, sample_out_dim=None, sample_threshold=None):
+    def set_sample_config(self, is_identity_layer, sample_embed_dim=None, sample_mlp_ratio=None, sample_num_heads=None, sample_dropout=None, \
+                          sample_attn_dropout=None, sample_out_dim=None, sample_threshold=None, sample_tau=None):
 
         if is_identity_layer:
             self.is_identity_layer = True
@@ -175,7 +176,15 @@ class Block(nn.Module):
         self.mlp.fc2_linear.set_sample_config(sample_in_dim=self.sample_ffn_embed_dim_this_layer, sample_out_dim=self.sample_out_dim)
         self.mlp.fc1_bn.set_sample_config(self.sample_ffn_embed_dim_this_layer)
         self.mlp.fc2_bn.set_sample_config(self.sample_out_dim)
+        
         self.mlp.fc1_lif.threshold = sample_threshold
+        self.mlp.fc1_lif.tau = sample_tau
+        self.mlp.fc2_lif.tau = sample_tau
+        self.attn.q_lif.tau = sample_tau
+        self.attn.k_lif.tau = sample_tau
+        self.attn.v_lif.tau = sample_tau
+        self.attn.attn_lif.tau = sample_tau
+        self.attn.proj_lif.tau = sample_tau
 
         # self.ffn_layer_norm.set_sample_config(sample_embed_dim=self.sample_embed_dim)
 
@@ -329,6 +338,7 @@ class Spikformer(nn.Module):
         self.sample_num_heads = config['num_heads']
         self.T = config['time_step']
         self.sample_threshold = config['threshold']
+        self.sample_tau = config['tau']
 
         patch_embed.set_sample_config(self.sample_embed_dim[0])
         self.sample_output_dim = [out_dim for out_dim in self.sample_embed_dim[1:]] + [self.sample_embed_dim[-1]]
@@ -344,7 +354,8 @@ class Spikformer(nn.Module):
                                         sample_dropout=0,
                                         sample_out_dim=self.sample_output_dim[i],
                                         sample_attn_dropout=0,
-                                        sample_threshold=self.sample_threshold[i])
+                                        sample_threshold=self.sample_threshold[i],
+                                        sample_tau=self.sample_tau[i])
             # exceeds sample layer number
             else:
                 blk.set_sample_config(is_identity_layer=True)

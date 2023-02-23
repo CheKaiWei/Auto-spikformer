@@ -433,12 +433,14 @@ def main():
     ### Super NAS ###
     choices = {'num_heads': model_cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': model_cfg.SEARCH_SPACE.MLP_RATIO,
             'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH,
-            'time_step':model_cfg.SEARCH_SPACE.TIME_STEP, 'threshold':model_cfg.SEARCH_SPACE.THRESHOLD}
+            'time_step':model_cfg.SEARCH_SPACE.TIME_STEP, 'threshold':model_cfg.SEARCH_SPACE.THRESHOLD,
+            'tau':model_cfg.SEARCH_SPACE.TAU}
     retrain_config = None
     if args.mode == 'retrain' and "RETRAIN" in model_cfg:
         retrain_config = {'layer_num': model_cfg.RETRAIN.DEPTH, 'embed_dim': [model_cfg.RETRAIN.EMBED_DIM]*model_cfg.RETRAIN.DEPTH,
                           'num_heads': model_cfg.RETRAIN.NUM_HEADS,'mlp_ratio': model_cfg.RETRAIN.MLP_RATIO,
-                          'time_step':model_cfg.RETRAIN.TIME_STEP, 'threshold':model_cfg.RETRAIN.THRESHOLD}
+                          'time_step':model_cfg.RETRAIN.TIME_STEP, 'threshold':model_cfg.RETRAIN.THRESHOLD,
+                          'tau':model_cfg.RETRAIN.TAU}
  
 
 
@@ -722,7 +724,7 @@ def main():
 def sample_configs(choices):
 
     config = {}
-    dimensions = ['mlp_ratio', 'num_heads', 'threshold']
+    dimensions = ['mlp_ratio', 'num_heads', 'threshold', 'tau']
     depth = random.choice(choices['depth'])
     time_step = random.choice(choices['time_step'])
     for dimension in dimensions:
