@@ -73,7 +73,7 @@ _logger = logging.getLogger('train')
 # The first arg parser parses out only the --config argument, this argument is used to
 # load a yaml file containing key-values that override the defaults for the main parser below
 config_parser = parser = argparse.ArgumentParser(description='Training Config', add_help=False)
-parser.add_argument('-c', '--config', default='cifar10.yml', type=str, metavar='FILE',
+parser.add_argument('-c', '--config', default='cifar100.yml', type=str, metavar='FILE',
                     help='YAML config file specifying default arguments')
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -103,7 +103,7 @@ parser.add_argument('--mlp-ratio', type=int, default=None, metavar='N',
 # Dataset / Model parameters
 parser.add_argument('-data-dir', metavar='DIR',default="/home/hanjing/CHE/data",
                     help='path to dataset')
-parser.add_argument('--dataset', '-d', metavar='NAME', default='torch/cifar10',
+parser.add_argument('--dataset', '-d', metavar='NAME', default='torch/cifar100',
                     help='dataset type (default: ImageFolder/ImageTar if empty)')
 parser.add_argument('--train-split', metavar='NAME', default='train',
                     help='dataset train split (default: train)')
@@ -333,7 +333,7 @@ def main():
 
 
     ### FITLOG ###
-    fitlog_debug = False
+    fitlog_debug = True
     repo = git.Repo(search_parent_directories=True)
     git_branch = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
@@ -497,8 +497,8 @@ def main():
         if args.local_rank == 0:
             _logger.info('AMP not enabled. Training in float32.')
 
-    checkpoint_weight = torch.load('/home/hanjing/CHE/Spikformer/logs/stage1_train_supernet/log_20230222_100148/model_best.pth.tar')
-    model.load_state_dict(checkpoint_weight['state_dict'])
+    # checkpoint_weight = torch.load('/home/hanjing/CHE/Spikformer/logs/stage1_train_supernet/log_20230222_100148/model_best.pth.tar')
+    # model.load_state_dict(checkpoint_weight['state_dict'])
 
     # optionally resume from a checkpoint
     resume_epoch = None
