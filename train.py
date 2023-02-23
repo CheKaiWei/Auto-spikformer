@@ -335,7 +335,7 @@ def main():
 
 
     ### FITLOG ###
-    fitlog_debug = True
+    fitlog_debug = False
     repo = git.Repo(search_parent_directories=True)
     git_branch = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
