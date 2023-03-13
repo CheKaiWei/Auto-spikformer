@@ -75,7 +75,7 @@ _logger = logging.getLogger('train')
 # The first arg parser parses out only the --config argument, this argument is used to
 # load a yaml file containing key-values that override the defaults for the main parser below
 config_parser = parser = argparse.ArgumentParser(description='Training Config', add_help=False)
-parser.add_argument('-c', '--config', default='cifar10.yml', type=str, metavar='FILE',
+parser.add_argument('-c', '--config', default='cifar100.yml', type=str, metavar='FILE',
                     help='YAML config file specifying default arguments')
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -105,7 +105,7 @@ parser.add_argument('--mlp-ratio', type=int, default=None, metavar='N',
 # Dataset / Model parameters
 parser.add_argument('-data-dir', metavar='DIR',default="/home/hanjing/CHE/data",
                     help='path to dataset')
-parser.add_argument('--dataset', '-d', metavar='NAME', default='torch/cifar10',
+parser.add_argument('--dataset', '-d', metavar='NAME', default='torch/cifar100',
                     help='dataset type (default: ImageFolder/ImageTar if empty)')
 parser.add_argument('--train-split', metavar='NAME', default='train',
                     help='dataset train split (default: train)')
@@ -345,7 +345,7 @@ def _parse_args():
 
 def decode_cand_tuple(cand_tuple):
     depth = cand_tuple[0]
-    return depth, list(cand_tuple[1:depth+1]), list(cand_tuple[depth + 1: 2 * depth + 1]), cand_tuple[-1]
+    return depth, list(cand_tuple[1:depth+1]), list(cand_tuple[depth + 1: 2 * depth + 1]), list(cand_tuple[2 * depth + 1: 3 * depth + 1]), list(cand_tuple[3 * depth + 1: 4 * depth + 1]), cand_tuple[-2], cand_tuple[-1]
 
 class EvolutionSearcher(object):
 
@@ -409,11 +409,14 @@ class EvolutionSearcher(object):
         info = self.vis_dict[cand]
         if 'visited' in info:
             return False
-        depth, mlp_ratio, num_heads, embed_dim = decode_cand_tuple(cand)
+        depth, mlp_ratio, num_heads, threshold, tau, time_step, embed_dim = decode_cand_tuple(cand)
         sampled_config = {}
         sampled_config['layer_num'] = depth
         sampled_config['mlp_ratio'] = mlp_ratio
         sampled_config['num_heads'] = num_heads
+        sampled_config['threshold'] = threshold
+        sampled_config['time_step'] = time_step
+        sampled_config['tau'] = tau
         sampled_config['embed_dim'] = [embed_dim]*depth
         # n_parameters = self.model_without_ddp.get_sampled_params_numel(sampled_config)
         # n_parameters = 20
@@ -428,10 +431,11 @@ class EvolutionSearcher(object):
             print('under minimum parameters limit')
             return False
 
-        print("rank:", utils.get_rank(), cand, info['params'])
+        print("rank:", utils.get_rank(), cand, info['params']) ## TODO what is the different between test_loader and val_loader
         # eval_stats = validate(self.val_loader, self.model, self.device, mode='retrain', retrain_config=sampled_config)
         # test_stats = validate(self.test_loader, self.model, self.device, mode='retrain', retrain_config=sampled_config)
         validate_loss_fn = nn.CrossEntropyLoss().cuda()
+        print(sampled_config)
         eval_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress, ## TODO check eval_stats
                                 choices=self.choices, mode = 'retrain', retrain_config=sampled_config)
         test_stats = validate(self.model, self.val_loader, validate_loss_fn, self.args, amp_autocast=suppress,
@@ -465,13 +469,14 @@ class EvolutionSearcher(object):
     def get_random_cand(self):
 
         cand_tuple = list()
-        dimensions = ['mlp_ratio', 'num_heads']
+        dimensions = ['mlp_ratio', 'num_heads','threshold','tau']
         depth = random.choice(self.choices['depth'])
         cand_tuple.append(depth)
         for dimension in dimensions:
             for i in range(depth):
                 cand_tuple.append(random.choice(self.choices[dimension]))
 
+        cand_tuple.append(random.choice(self.choices['time_step']))
         cand_tuple.append(random.choice(self.choices['embed_dim']))
         return tuple(cand_tuple)
 
@@ -495,7 +500,7 @@ class EvolutionSearcher(object):
 
         def random_func():
             cand = list(random.choice(self.keep_top_k[k]))
-            depth, mlp_ratio, num_heads, embed_dim = decode_cand_tuple(cand)
+            depth, mlp_ratio, num_heads, threshold, tau, time_step, embed_dim  = decode_cand_tuple(cand)
             random_s = random.random()
 
             # depth
@@ -517,18 +522,34 @@ class EvolutionSearcher(object):
                     mlp_ratio[i] = random.choice(self.choices['mlp_ratio'])
 
             # num_heads
-
             for i in range(depth):
                 random_s = random.random()
                 if random_s < m_prob:
                     num_heads[i] = random.choice(self.choices['num_heads'])
+
+            # threshold
+            for i in range(depth):
+                random_s = random.random()
+                if random_s < m_prob:
+                    threshold[i] = random.choice(self.choices['threshold'])
+
+            # threshold
+            for i in range(depth):
+                random_s = random.random()
+                if random_s < m_prob:
+                    tau[i] = random.choice(self.choices['tau'])
 
             # embed_dim
             random_s = random.random()
             if random_s < s_prob:
                 embed_dim = random.choice(self.choices['embed_dim'])
 
-            result_cand = [depth] + mlp_ratio + num_heads + [embed_dim]
+            # time_step
+            random_s = random.random()
+            if random_s < s_prob:
+                time_step = random.choice(self.choices['time_step'])
+
+            result_cand = [depth] + mlp_ratio + num_heads + threshold + [embed_dim] + [time_step]
 
             return tuple(result_cand)
 
@@ -626,7 +647,7 @@ def main():
 
 
     ### FITLOG ###
-    fitlog_debug = False
+    fitlog_debug = True
     repo = git.Repo(search_parent_directories=True)
     git_branch = repo.head.reference.path.split('/')[-1]
     git_msg = repo.head.object.summary
@@ -710,8 +731,9 @@ def main():
 
     ### Super NAS ###
     choices = {'num_heads': model_cfg.SEARCH_SPACE.NUM_HEADS, 'mlp_ratio': model_cfg.SEARCH_SPACE.MLP_RATIO,
-            'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH}
-
+            'embed_dim': model_cfg.SEARCH_SPACE.EMBED_DIM , 'depth': model_cfg.SEARCH_SPACE.DEPTH,
+            'time_step':model_cfg.SEARCH_SPACE.TIME_STEP, 'threshold':model_cfg.SEARCH_SPACE.THRESHOLD,
+            'tau':model_cfg.SEARCH_SPACE.TAU}
 
     print("Creating model")
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
