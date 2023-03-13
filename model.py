@@ -177,7 +177,7 @@ class Block(nn.Module):
         self.mlp.fc1_bn.set_sample_config(self.sample_ffn_embed_dim_this_layer)
         self.mlp.fc2_bn.set_sample_config(self.sample_out_dim)
         
-        # self.mlp.fc1_lif.v_threshold = sample_threshold
+        self.mlp.fc1_lif.v_threshold = sample_threshold
         self.mlp.fc1_lif.tau = sample_tau
         self.mlp.fc2_lif.tau = sample_tau
         self.attn.q_lif.tau = sample_tau
