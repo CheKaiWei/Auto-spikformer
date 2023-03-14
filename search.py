@@ -533,7 +533,7 @@ class EvolutionSearcher(object):
                 if random_s < m_prob:
                     threshold[i] = random.choice(self.choices['threshold'])
 
-            # threshold
+            # tau
             for i in range(depth):
                 random_s = random.random()
                 if random_s < m_prob:
@@ -549,7 +549,7 @@ class EvolutionSearcher(object):
             if random_s < s_prob:
                 time_step = random.choice(self.choices['time_step'])
 
-            result_cand = [depth] + mlp_ratio + num_heads + threshold + [embed_dim] + [time_step]
+            result_cand = [depth] + mlp_ratio + num_heads + threshold + tau + [time_step] + [embed_dim]
 
             return tuple(result_cand)
 
