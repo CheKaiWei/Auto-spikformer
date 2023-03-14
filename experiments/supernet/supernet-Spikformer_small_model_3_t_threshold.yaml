@@ -1,0 +1,27 @@
+SUPERNET:
+  MLP_RATIO: 4.0
+  NUM_HEADS: 12
+  EMBED_DIM: 384
+  DEPTH: 4
+  TIME_STEP: 4
+  THRESOLD: 2
+SEARCH_SPACE:
+  MLP_RATIO:
+    - 4
+  NUM_HEADS:
+    - 12 
+  DEPTH:
+    - 4
+  EMBED_DIM:
+    - 384
+  TIME_STEP:
+    - 4
+  THRESHOLD:
+    - 0.6
+    - 0.8
+    - 1.0
+    - 1.2
+    - 1.4
+    - 1.6
+    - 1.8
+    - 2.0
